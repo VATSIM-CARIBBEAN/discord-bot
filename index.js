@@ -15,94 +15,134 @@ const {
   deleteWorkflowByThread,
 } = require('./local_library/workflow');
 
-const { handleButtons } = require('./commands/workflow/buttons');
+const { decisionRowForStep, buildStep1Intro } = require('./commands/workflow/_shared');
+const handleWorkflowButton = require('./commands/workflow/buttons');
 const { refreshBoard } = require('./commands/workflow/board');
 
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+// ===== Config from .env =====
+const DISCORD_TOKEN     = process.env.BOT_TOKEN;
+const GUILD_ID          = process.env.GUILD_ID;
+const FORUM_CHANNEL_ID  = process.env.FORUM_CHANNEL_ID; // change-request forum
+const HB_URL = process.env.BETTERSTACK_HEARTBEAT_URL;
+const HB_INTERVAL = Number(process.env.BETTERSTACK_HEARTBEAT_INTERVAL_MS || 60000);
+
+if (!DISCORD_TOKEN || !GUILD_ID || !FORUM_CHANNEL_ID) {
+  console.error('Missing one of BOT_TOKEN, GUILD_ID, FORUM_CHANNEL_ID in .env');
+  process.exit(1);
+}
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildModeration,
-    GatewayIntentBits.GuildMessageTyping,
   ],
-  partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.GuildMember, Partials.User],
+  partials: [Partials.Channel, Partials.Message],
 });
 
-// ————————————————————————————————
-// Lifecycle
-// ————————————————————————————————
 let hbHandle = null;
 
-client.once(Events.ClientReady, async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+client.once('ready', async (bot) => {
+  console.log(`🤖 Logged in as ${bot.user.tag}`);
+  console.log(`🏠 Guild: ${GUILD_ID}`);
+  console.log(`🧵 Forum channel: ${FORUM_CHANNEL_ID}`);
 
-  // heartbeat pinger (optional)
-  hbHandle = startHeartbeat({
-    url: process.env.HEARTBEAT_URL,            // e.g. your health check endpoint
-    intervalMs: 60_000,
-    payload: { service: 'discord-bot', ts: Date.now() },
-  });
+  hbHandle = startHeartbeat(HB_URL, HB_INTERVAL);
+  console.log('Better Stack heartbeat started.');
 
-  // On startup: make the “Open Workflows” board accurate even if threads were closed then deleted.
-  await refreshBoard(client).catch(err => console.error('refreshBoard on ready failed:', err));
-
-  // Also refresh every 5 minutes – this handles mid-run deletes or permission changes.
-  const REFRESH_INTERVAL_MS = Number(process.env.WORKFLOW_BOARD_REFRESH_MS || 5 * 60 * 1000);
-  setInterval(() => {
-    refreshBoard(client).catch(err => console.error('refreshBoard interval failed:', err));
-  }, REFRESH_INTERVAL_MS);
+  // Refresh the fixed "Open Workflows" board at startup
+  try { await refreshBoard(client); } catch (e) {
+    console.warn('Board refresh on ready failed:', e.message);
+  }
 });
 
-// ————————————————————————————————
-// Message & Interaction handlers
-// ————————————————————————————————
+/**
+ * New forum post (thread) → create DB row, send Step 1 intro, refresh board
+ */
 client.on(Events.ThreadCreate, async (thread) => {
-  // Only consider threads created inside forums, skip system threads
   try {
-    if (thread?.parent?.type !== ChannelType.GuildForum) return;
-    await ensureWorkflowForThread(thread);
+    if (thread.parent?.type !== ChannelType.GuildForum) return;
+    if (thread.guildId !== GUILD_ID) return;
+    if (thread.parentId !== FORUM_CHANNEL_ID) return;
+
+    await ensureWorkflowForThread({ thread, initialRequesterId: thread.ownerId });
+
+    const intro = buildStep1Intro(thread.ownerId);
+
+    setTimeout(async () => {
+      try {
+        await thread.send({ content: intro, components: [decisionRowForStep(0)] });
+      } catch (err) {
+        console.error(`Intro send failed in ${thread.id}:`, err?.code || err);
+      }
+      try { await refreshBoard(client); } catch {}
+    }, 2500);
   } catch (err) {
-    console.error('ensureWorkflowForThread failed:', err);
+    console.error('Error handling ThreadCreate:', err);
   }
 });
 
-client.on(Events.ThreadDelete, async (thread) => {
-  try {
-    // Clean up when a workflow thread is deleted
-    await deleteWorkflowByThread(thread.id);
-    // Keep the board tidy shortly after a deletion
-    await refreshBoard(client).catch(() => {});
-  } catch (err) {
-    console.error('deleteWorkflowByThread failed:', err);
-  }
-});
-
+/**
+ * Button interactions (Continue / Change / Veto …)
+ */
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (!interaction.isButton()) return;
-    await handleButtons(interaction, client);
-    // Updates that change status should reflect on the board
-    await refreshBoard(client).catch(() => {});
+    if (interaction.guildId !== GUILD_ID) return;
+
+    await handleWorkflowButton(interaction);
+
+    // After any action, keep the board fresh
+    try { await refreshBoard(interaction.client); } catch {}
   } catch (err) {
-    console.error('handleButtons failed:', err);
+    console.error('Button handler error:', err);
+    if (interaction.deferred || interaction.replied) {
+      try { await interaction.followUp({ content: 'Something went wrong.', ephemeral: true }); } catch {}
+    } else {
+      try { await interaction.reply({ content: 'Something went wrong.', ephemeral: true }); } catch {}
+    }
   }
 });
 
-// ————————————————————————————————
-// Shutdown
-// ————————————————————————————————
-async function shutdown() {
-  try { if (hbHandle) hbHandle.stop?.(); } catch {}
-  try { await client.destroy(); } catch {}
+/**
+ * When a workflow thread is manually deleted:
+ * - delete the row from DB
+ * - refresh the Open Workflows board
+ */
+client.on(Events.ThreadDelete, async (thread) => {
+  try {
+    if (thread?.guildId !== GUILD_ID) return;
+    await deleteWorkflowByThread(thread.id).catch(() => {});
+    await refreshBoard(client).catch(() => {});
+    console.log(`🗑️ Thread ${thread.id} deleted → row removed from DB`);
+  } catch (err) {
+    console.error('Error handling ThreadDelete:', err);
+  }
+});
+
+/**
+ * Safety net: Some gateways deliver thread deletions via ChannelDelete
+ */
+client.on(Events.ChannelDelete, async (channel) => {
+  try {
+    if (typeof channel?.isThread === 'function' && channel.isThread()) {
+      if (channel.guildId !== GUILD_ID) return;
+      await deleteWorkflowByThread(channel.id).catch(() => {});
+      await refreshBoard(client).catch(() => {});
+      console.log(`🗑️ (ChannelDelete) Thread ${channel.id} deleted → row removed from DB`);
+    }
+  } catch (err) {
+    console.error('Error handling ChannelDelete:', err);
+  }
+});
+
+/* graceful shutdown */
+function shutdown() {
+  console.log('Shutting down…');
+  client.destroy();
   process.exit(0);
 }
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-process.on('beforeExit', () => { if (hbHandle) hbHandle.stop?.(); });
+process.on('beforeExit', () => { if (hbHandle) hbHandle.stop(); });
 
 client.login(DISCORD_TOKEN);
