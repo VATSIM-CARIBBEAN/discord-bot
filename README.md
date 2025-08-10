@@ -54,6 +54,8 @@ Currently, it is used for **workflow automation** to manage and approve change r
 
 You can use process manager on a virtual machine to keep your bot running 24/7. Oracle offers a 24/7 free tier virtual machine which you can set up.
 
+A Heroku Procfile is included for those who wish to use Heroku. You must disable web and enable worker for a 24/7 runtime.
+
 ## Updating 
 
 If you have set up the bot on an ubuntu virtual machine such as Oracle, you can pull the latest update by running the following commands:
