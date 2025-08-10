@@ -45,13 +45,27 @@ function buildWorkflowEmbed(description, currentCode) {
 }
 
 /**
- * Extract mentions from text, return { cleanText, mentions }
+ * Extract mentions from text, preserve "Requester (<@ID>)" in embed.
  */
 function extractMentions(text) {
+  let cleaned = text.trim();
+
   const mentionRegex = /<@&?\d+>/g;
-  const mentions = text.match(mentionRegex) || [];
-  const cleanText = text.replace(mentionRegex, '').trim();
-  return { cleanText, mentions };
+  const allMentions = cleaned.match(mentionRegex) || [];
+  const uniqueMentions = [...new Set(allMentions)];
+
+  // Preserve "Requester (<@ID>)" text inside embed
+  uniqueMentions.forEach(m => {
+    const requesterPattern = new RegExp(`Requester\\s*\\(${m}\\)`, 'i');
+    if (!requesterPattern.test(cleaned)) {
+      cleaned = cleaned.replace(new RegExp(m, 'g'), '').trim();
+    }
+  });
+
+  return {
+    cleanText: cleaned,
+    mentionsOutside: uniqueMentions, // still tag outside
+  };
 }
 
 /** Remove buttons from the message that was clicked */
@@ -63,9 +77,9 @@ async function removeButtonsFromClickedMessage(interaction) {
 }
 
 async function sendWorkflowStep(thread, stepText, currentCode, components) {
-  const { cleanText, mentions } = extractMentions(stepText);
+  const { cleanText, mentionsOutside } = extractMentions(stepText);
   await thread.send({
-    content: mentions.join(' '), // tag only relevant members/roles outside embed
+    content: mentionsOutside.join(' '),
     embeds: [buildWorkflowEmbed(cleanText, currentCode)],
     components: components || [],
   });

@@ -20,10 +20,9 @@ const { decisionRowForStep, buildStep1Intro } = require('./commands/workflow/_sh
 const handleWorkflowButton = require('./commands/workflow/buttons');
 const { refreshBoard } = require('./commands/workflow/board');
 
-// ===== Config from .env =====
 const DISCORD_TOKEN     = process.env.BOT_TOKEN;
 const GUILD_ID          = process.env.GUILD_ID;
-const FORUM_CHANNEL_ID  = process.env.FORUM_CHANNEL_ID; // change-request forum
+const FORUM_CHANNEL_ID  = process.env.FORUM_CHANNEL_ID;
 const HB_URL = process.env.BETTERSTACK_HEARTBEAT_URL;
 const HB_INTERVAL = Number(process.env.BETTERSTACK_HEARTBEAT_INTERVAL_MS || 60000);
 
@@ -42,12 +41,22 @@ const client = new Client({
 
 let hbHandle = null;
 
-// Extract mentions from text for outside embed
 function extractMentions(text) {
+  const systemLine = /^\s*issued the command .*$/im;
+  let cleaned = text.replace(systemLine, '').trim();
+
   const mentionRegex = /<@&?\d+>/g;
-  const mentions = text.match(mentionRegex) || [];
-  const cleanText = text.replace(mentionRegex, '').trim();
-  return { cleanText, mentions };
+  const allMentions = cleaned.match(mentionRegex) || [];
+  const uniqueMentions = [...new Set(allMentions)];
+
+  uniqueMentions.forEach(m => {
+    const requesterPattern = new RegExp(`Requester\\s*\\(${m}\\)`, 'i');
+    if (!requesterPattern.test(cleaned)) {
+      cleaned = cleaned.replace(new RegExp(m, 'g'), '').trim();
+    }
+  });
+
+  return { cleanText: cleaned, mentionsOutside: uniqueMentions };
 }
 
 client.once('ready', async (bot) => {
@@ -58,7 +67,6 @@ client.once('ready', async (bot) => {
   hbHandle = startHeartbeat(HB_URL, HB_INTERVAL);
   console.log('Better Stack heartbeat started.');
 
-  // Refresh the fixed "Open Workflows" board at startup (also removes stale entries)
   try { 
     await refreshBoard(client);
     console.log('🗂 Workflow board refreshed and stale entries removed.');
@@ -67,9 +75,6 @@ client.once('ready', async (bot) => {
   }
 });
 
-/**
- * New forum post (thread) → create DB row, send Step 1 intro (embed), refresh board
- */
 client.on(Events.ThreadCreate, async (thread) => {
   try {
     if (thread.parent?.type !== ChannelType.GuildForum) return;
@@ -79,7 +84,7 @@ client.on(Events.ThreadCreate, async (thread) => {
     await ensureWorkflowForThread({ thread, initialRequesterId: thread.ownerId });
 
     const introText = buildStep1Intro(thread.ownerId);
-    const { cleanText, mentions } = extractMentions(introText);
+    const { cleanText, mentionsOutside } = extractMentions(introText);
 
     const embed = new EmbedBuilder()
       .setDescription(cleanText)
@@ -89,7 +94,7 @@ client.on(Events.ThreadCreate, async (thread) => {
     setTimeout(async () => {
       try {
         await thread.send({ 
-          content: mentions.join(' '),
+          content: mentionsOutside.join(' '),
           embeds: [embed], 
           components: [decisionRowForStep(0)] 
         });
@@ -103,17 +108,12 @@ client.on(Events.ThreadCreate, async (thread) => {
   }
 });
 
-/**
- * Button interactions (Continue / Change / Veto …)
- */
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (!interaction.isButton()) return;
     if (interaction.guildId !== GUILD_ID) return;
 
     await handleWorkflowButton(interaction);
-
-    // After any action, keep the board fresh
     try { await refreshBoard(interaction.client); } catch {}
   } catch (err) {
     console.error('Button handler error:', err);
@@ -125,11 +125,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-/**
- * When a workflow thread is manually deleted:
- * - delete the row from DB
- * - refresh the Open Workflows board
- */
 client.on(Events.ThreadDelete, async (thread) => {
   try {
     if (thread?.guildId !== GUILD_ID) return;
@@ -141,9 +136,6 @@ client.on(Events.ThreadDelete, async (thread) => {
   }
 });
 
-/**
- * Safety net: Some gateways deliver thread deletions via ChannelDelete
- */
 client.on(Events.ChannelDelete, async (channel) => {
   try {
     if (typeof channel?.isThread === 'function' && channel.isThread()) {
@@ -157,7 +149,6 @@ client.on(Events.ChannelDelete, async (channel) => {
   }
 });
 
-/* graceful shutdown */
 function shutdown() {
   console.log('Shutting down…');
   client.destroy();

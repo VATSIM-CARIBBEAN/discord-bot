@@ -2,7 +2,6 @@
 const { getOpenWorkflows, codeToName, deleteWorkflowByThread } = require('../../local_library/workflow');
 const { EmbedBuilder } = require('discord.js');
 
-// Fixed IDs you gave
 const WORKFLOW_BOARD_THREAD_ID  = '1403972536102031403';
 const WORKFLOW_BOARD_MESSAGE_ID = '1403972536102031403';
 
@@ -23,13 +22,10 @@ async function removeStaleWorkflows(client) {
   }
 }
 
-/**
- * Build the board embed from open workflows.
- */
 async function buildBoardEmbed(client) {
   await removeStaleWorkflows(client);
   const guildId = process.env.GUILD_ID;
-  const rows = await getOpenWorkflows(); // status 0..3
+  const rows = await getOpenWorkflows();
 
   const embed = new EmbedBuilder()
     .setTitle('Open Workflows')
@@ -51,32 +47,23 @@ async function buildBoardEmbed(client) {
   return embed;
 }
 
-/**
- * Edit the fixed message inside the fixed thread with the current board content.
- */
 async function refreshBoard(client) {
   try {
     const thread = await client.channels.fetch(WORKFLOW_BOARD_THREAD_ID);
     if (!thread?.isThread?.()) {
-      console.error(`❌ Board thread not found or not a thread: ${WORKFLOW_BOARD_THREAD_ID}`);
+      console.warn('Workflow board thread not found or invalid.');
       return;
     }
-
-    const msg = await thread.messages.fetch(WORKFLOW_BOARD_MESSAGE_ID).catch(() => null);
-    if (!msg) {
-      console.error(`❌ Board message not found in thread ${WORKFLOW_BOARD_THREAD_ID}: ${WORKFLOW_BOARD_MESSAGE_ID}`);
-      return;
-    }
-
+    const message = await thread.messages.fetch(WORKFLOW_BOARD_MESSAGE_ID).catch(() => null);
     const embed = await buildBoardEmbed(client);
-    await msg.edit({ embeds: [embed], content: '' }).catch(err => {
-      console.error('❌ Failed to edit board message:', err.message || err);
-    });
 
-    try { await thread.setLocked(true); } catch {}
-
+    if (message) {
+      await message.edit({ embeds: [embed] });
+    } else {
+      await thread.send({ embeds: [embed] });
+    }
   } catch (err) {
-    console.error('❌ Error during board refresh:', err.message || err);
+    console.error('Error refreshing workflow board:', err);
   }
 }
 
