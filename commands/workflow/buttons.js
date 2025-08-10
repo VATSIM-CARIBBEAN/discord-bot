@@ -24,6 +24,8 @@ const {
   buildVetoed,
 } = require('./_shared');
 
+const { refreshBoard } = require('./board');
+
 /** Remove buttons from the message that was clicked */
 async function removeButtonsFromClickedMessage(interaction) {
   try {
@@ -33,13 +35,22 @@ async function removeButtonsFromClickedMessage(interaction) {
 }
 
 async function handleContinue(interaction, thread, row, currentCode) {
-  const changeRequestedView = currentCode === 0 && (await needsRestartAfterStep1Change(interaction, thread));
-  const requesterDiscordId = thread.ownerId; // always use the live Discord ID for mentions
+  const changeRequestedView =
+    currentCode === 0 && (await needsRestartAfterStep1Change(interaction, thread));
+  const requesterDiscordId = thread.ownerId; // for mentions
 
   // Permission gate
-  const allowed = await ensureAuthorized(interaction, currentCode, row.requester, changeRequestedView);
+  const allowed = await ensureAuthorized(
+    interaction,
+    currentCode,
+    row.requester,
+    changeRequestedView
+  );
   if (!allowed) {
-    return interaction.reply({ content: 'You do not have permission to run commands at this step.', ephemeral: true });
+    return interaction.reply({
+      content: 'You do not have permission to run commands at this step.',
+      ephemeral: true,
+    });
   }
   if (isFinalStatus(currentCode)) {
     return interaction.reply({ content: 'This workflow is already complete.', ephemeral: true });
@@ -52,6 +63,7 @@ async function handleContinue(interaction, thread, row, currentCode) {
       components: [decisionRowForStep(0)],
     });
     await removeButtonsFromClickedMessage(interaction);
+    try { await refreshBoard(interaction.client); } catch {}
     return interaction.deferUpdate().catch(() => {});
   }
 
@@ -81,38 +93,50 @@ async function handleContinue(interaction, thread, row, currentCode) {
     });
   } else if (currentCode === 3 && nxt === 4) {
     await tryRename(thread, 'COMPLETE');
-    await thread.send({
-      content: buildPublished(interaction.user.id),
-    });
+    await thread.send({ content: buildPublished(interaction.user.id) });
     try { await thread.setLocked(true); await thread.setArchived(true); } catch (_) {}
   }
 
   await removeButtonsFromClickedMessage(interaction);
+  try { await refreshBoard(interaction.client); } catch {}
   return interaction.deferUpdate().catch(() => {});
 }
 
 async function handleChange(interaction, thread, row, currentCode) {
-  const changeRequestedView = currentCode === 0 && (await needsRestartAfterStep1Change(interaction, thread));
-  const requesterDiscordId = thread.ownerId; // always use live Discord ID
+  const changeRequestedView =
+    currentCode === 0 && (await needsRestartAfterStep1Change(interaction, thread));
+  const requesterDiscordId = thread.ownerId;
 
   // Permission gate
-  const allowed = await ensureAuthorized(interaction, currentCode, row.requester, changeRequestedView);
+  const allowed = await ensureAuthorized(
+    interaction,
+    currentCode,
+    row.requester,
+    changeRequestedView
+  );
   if (!allowed) {
-    return interaction.reply({ content: 'You do not have permission to run commands at this step.', ephemeral: true });
+    return interaction.reply({
+      content: 'You do not have permission to run commands at this step.',
+      ephemeral: true,
+    });
   }
 
   if (currentCode === 2) {
     // Technical Review → back to Step 1 using the MODIFIED Step 1 (Change Requested)
     const actorCid = await getActorCidOrEphemeral(interaction);
     if (!actorCid) return;
+
     const res = await setStatusByThread(thread.id, 0, actorCid);
-    if (!res.ok) return interaction.reply({ content: 'Could not update database.', ephemeral: true });
+    if (!res.ok) {
+      return interaction.reply({ content: 'Could not update database.', ephemeral: true });
+    }
 
     await thread.send({
       content: buildChangeRequested(interaction.user.id, requesterDiscordId),
       components: [continueOnlyRow()], // ONLY Continue here
     });
     await removeButtonsFromClickedMessage(interaction);
+    try { await refreshBoard(interaction.client); } catch {}
     return interaction.deferUpdate().catch(() => {});
   }
 
@@ -123,6 +147,7 @@ async function handleChange(interaction, thread, row, currentCode) {
       components: [continueOnlyRow()], // ONLY Continue here
     });
     await removeButtonsFromClickedMessage(interaction);
+    try { await refreshBoard(interaction.client); } catch {}
     return interaction.deferUpdate().catch(() => {});
   }
 
@@ -133,7 +158,10 @@ async function handleVeto(interaction, thread, row) {
   // Leadership-only (use step 3 rule)
   const allowed = await ensureAuthorized(interaction, 3, row.requester, false);
   if (!allowed) {
-    return interaction.reply({ content: 'You do not have permission to run commands at this step.', ephemeral: true });
+    return interaction.reply({
+      content: 'You do not have permission to run commands at this step.',
+      ephemeral: true,
+    });
   }
 
   const actorCid = await getActorCidOrEphemeral(interaction);
@@ -147,14 +175,18 @@ async function handleVeto(interaction, thread, row) {
   try { await thread.setLocked(true); await thread.setArchived(true); } catch (_) {}
 
   await removeButtonsFromClickedMessage(interaction);
+  try { await refreshBoard(interaction.client); } catch {}
   return interaction.deferUpdate().catch(() => {});
 }
 
-// (Not currently shown; kept for potential future use)
+// (Not currently shown; kept for potential future use if you add a Publish button)
 async function handlePublish(interaction, thread, row) {
   const allowed = await ensureAuthorized(interaction, 3, row.requester, false);
   if (!allowed) {
-    return interaction.reply({ content: 'You do not have permission to run commands at this step.', ephemeral: true });
+    return interaction.reply({
+      content: 'You do not have permission to run commands at this step.',
+      ephemeral: true,
+    });
   }
 
   const actorCid = await getActorCidOrEphemeral(interaction);
@@ -168,6 +200,7 @@ async function handlePublish(interaction, thread, row) {
   try { await thread.setLocked(true); await thread.setArchived(true); } catch (_) {}
 
   await removeButtonsFromClickedMessage(interaction);
+  try { await refreshBoard(interaction.client); } catch {}
   return interaction.deferUpdate().catch(() => {});
 }
 
@@ -187,7 +220,7 @@ module.exports = async function handleWorkflowButton(interaction) {
   if (id === 'wf_continue') return handleContinue(interaction, thread, row, currentCode);
   if (id === 'wf_change')   return handleChange(interaction, thread, row, currentCode);
   if (id === 'wf_veto')     return handleVeto(interaction, thread, row);
-  if (id === 'wf_publish')  return handlePublish(interaction, thread, row); // not used right now
+  if (id === 'wf_publish')  return handlePublish(interaction, thread, row); // not used currently
 
   return interaction.reply({ content: 'Unknown action.', ephemeral: true });
 };

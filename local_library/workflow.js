@@ -1,149 +1,168 @@
 // local_library/workflow.js
-// Utilities for reading/updating workflow rows and resolving VATCAR user CIDs
-// from a Discord account integration.
+// DB helpers + workflow state machine for the VATCAR Discord bot
 
-const { query } = require('./db');
+const { pool } = require('./db');
 
-/** ------------------------ Status map ------------------------ */
-const STATUS_MAP = {
-  0: 'INITIAL LEADERSHIP REVIEW',
-  1: 'STAFF REVIEW',
-  2: 'TECHNICAL TEAM REVIEW',
-  3: 'FINAL COMPREHENSIVE REVIEW',
-  4: 'APPROVED',
-  5: 'VETOED',
-  6: 'TABLED',
+/* =========================
+ * Status map / state machine
+ * ========================= */
+const STATUS = {
+  'INITIAL LEADERSHIP REVIEW': 0,
+  'STAFF REVIEW': 1,
+  'TECHNICAL TEAM REVIEW': 2,
+  'FINAL COMPREHENSIVE REVIEW': 3,
+  'APPROVED': 4,
+  'VETOED': 5,
+  'TABLED': 6,
 };
 
-const NAME_TO_CODE = Object.fromEntries(
-  Object.entries(STATUS_MAP).map(([k, v]) => [v, Number(k)])
+const CODE_TO_NAME = Object.fromEntries(
+  Object.entries(STATUS).map(([k, v]) => [v, k])
 );
 
-function normName(s) {
-  return String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
-}
-
 function codeToName(code) {
-  return STATUS_MAP[Number(code)] ?? 'UNKNOWN';
+  return CODE_TO_NAME[Number(code)] ?? null;
 }
-
 function nameToCode(name) {
-  return NAME_TO_CODE[normName(name)] ?? null;
+  if (!name) return null;
+  const key = String(name).trim().toUpperCase();
+  return STATUS[key] ?? null;
 }
-
-function isFinalStatus(x) {
-  const c = typeof x === 'number' ? x : nameToCode(x);
-  return c >= 4; // Approved, Vetoed, Tabled
+function isFinalStatus(code) {
+  const c = Number(code);
+  return c >= 4; // 4=APPROVED, 5=VETOED, 6=TABLED
 }
-
-function nextStatus(x) {
-  const c = typeof x === 'number' ? x : (nameToCode(x) ?? 0);
-  if (c >= 4) return null;
+function nextStatus(code) {
+  const c = Number(code);
+  if (c < 0) return 0;
+  if (c >= 3) return 4; // from FINAL COMPREHENSIVE REVIEW -> APPROVED
   return c + 1;
 }
 
-/** -------------------- Integrations lookup ------------------- */
-/**
- * Resolve a VATCAR user CID from a Discord user id using the `integrations` table.
- * We assume:
- *   - `type = 1` represents Discord integrations
- *   - `value` holds the Discord user id as a string
- * Returns a number (user_cid) or null.
- */
-async function resolveUserCidByDiscord(discordUserId) {
-  const rows = await query(
-    `SELECT user_cid
-       FROM integrations
-      WHERE type = 1 AND value = :v
-      ORDER BY id DESC
-      LIMIT 1`,
-    { v: String(discordUserId) }
-  );
-  if (!rows || rows.length === 0) return null;
-  const cid = Number(rows[0].user_cid);
-  return Number.isFinite(cid) ? cid : null;
-}
+/* ======================
+ * Basic workflow storage
+ * ====================== */
 
-/** -------------------- Workflow row helpers ------------------ */
 /**
- * Ensure a workflow row exists for the given Discord thread.
- * If it already exists, returns its id. Otherwise inserts a new row in
- * `change_workflow` with status=0 (INITIAL LEADERSHIP REVIEW).
+ * Ensure a change_workflow row exists for discord thread.
+ * requester is stored as the Discord ownerId (string).
  */
 async function ensureWorkflowForThread({ thread, initialRequesterId }) {
-  const threadId = String(thread.id);
-
-  const existing = await query(
-    `SELECT id FROM change_workflow WHERE discord_forumid = :t LIMIT 1`,
-    { t: threadId }
+  const discordId = String(thread.id);
+  const [rows] = await pool.query(
+    'SELECT id FROM change_workflow WHERE discord_forumid = ? LIMIT 1',
+    [discordId]
   );
-  if (existing.length) return existing[0].id;
+  if (rows.length) return rows[0].id;
 
-  const res = await query(
+  const title = thread.name ?? '(untitled)';
+  const requester = String(initialRequesterId ?? thread.ownerId ?? '');
+
+  const [res] = await pool.query(
     `INSERT INTO change_workflow
-       (requester, title, status, staff_member, created_at, updated_at, discord_forumid)
-     VALUES
-       (:req, :title, 0, NULL, NOW(), NOW(), :t)`,
-    {
-      req: Number(initialRequesterId) || 0,
-      title: String(thread.name || ''),
-      t: threadId,
-    }
+       (discord_forumid, requester, title, description, status, staff_member, created_at, updated_at)
+     VALUES (?, ?, ?, '', ?, NULL, NOW(), NOW())`,
+    [discordId, requester, title, 0]
   );
   return res.insertId;
 }
 
-/** Fetch the full workflow row for a thread id (discord_forumid). */
 async function getWorkflowRowByThread(threadId) {
-  const rows = await query(
-    `SELECT * FROM change_workflow WHERE discord_forumid = :t LIMIT 1`,
-    { t: String(threadId) }
+  const [rows] = await pool.query(
+    'SELECT * FROM change_workflow WHERE discord_forumid = ? LIMIT 1',
+    [String(threadId)]
   );
-  return rows.length ? rows[0] : null;
+  return rows[0] ?? null;
 }
 
-/** Get just the numeric status code for a thread. */
 async function getStatusCodeByThread(threadId) {
-  const row = await getWorkflowRowByThread(threadId);
-  return row ? Number(row.status) : null;
+  const [rows] = await pool.query(
+    'SELECT status FROM change_workflow WHERE discord_forumid = ? LIMIT 1',
+    [String(threadId)]
+  );
+  return rows[0]?.status ?? null;
 }
 
 /**
- * Update the status for a given thread and record the acting staff member (VATCAR user_cid).
- * @param {string} threadId - Discord thread/channel id
- * @param {number|string} status - numeric code or status name
- * @param {number|null} actorCid - VATCAR user_cid to log (nullable)
- * @returns { ok:boolean, code:number, affected:number }
+ * Set status and record acting staff_member as a VATCAR CID (user_cid).
  */
-async function setStatusByThread(threadId, status, actorCid) {
-  const code = typeof status === 'number' ? status : (nameToCode(status) ?? 0);
+async function setStatusByThread(threadId, newStatus, actorCid) {
+  try {
+    const [res] = await pool.query(
+      `UPDATE change_workflow
+          SET status = ?, staff_member = ?, updated_at = NOW()
+        WHERE discord_forumid = ?`,
+      [Number(newStatus), actorCid ?? null, String(threadId)]
+    );
+    return { ok: res.affectedRows > 0 };
+  } catch (e) {
+    console.error('setStatusByThread error:', e);
+    return { ok: false, error: e };
+  }
+}
 
-  const res = await query(
-    `UPDATE change_workflow
-        SET status = :s,
-            staff_member = :actor,
-            updated_at = NOW()
-      WHERE discord_forumid = :t`,
-    {
-      s: code,
-      actor: actorCid ?? null,
-      t: String(threadId),
-    }
+/**
+ * Permanently delete the workflow row for a given Discord thread id.
+ */
+async function deleteWorkflowByThread(threadId) {
+  try {
+    const [res] = await pool.query(
+      'DELETE FROM change_workflow WHERE discord_forumid = ?',
+      [String(threadId)]
+    );
+    return { ok: res.affectedRows > 0 };
+  } catch (e) {
+    console.error('deleteWorkflowByThread error:', e);
+    return { ok: false, error: e };
+  }
+}
+
+/**
+ * Map a Discord user id -> VATCAR user_cid using the integrations table.
+ * Assumes: integrations(type=1 for Discord), value = discord user id.
+ */
+async function resolveUserCidByDiscord(discordUserId) {
+  const [rows] = await pool.query(
+    `SELECT user_cid
+       FROM integrations
+      WHERE type = 1 AND value = ?
+      ORDER BY id DESC
+      LIMIT 1`,
+    [String(discordUserId)]
   );
+  return rows[0]?.user_cid ?? null;
+}
 
-  const affected = res.affectedRows ?? 0;
-  return { ok: affected > 0, code, affected };
+/**
+ * Fetch open workflows (status 0..3).
+ */
+async function getOpenWorkflows(limit = 50) {
+  const [rows] = await pool.query(
+    `SELECT id, discord_forumid, title, status, updated_at
+       FROM change_workflow
+      WHERE status IN (0,1,2,3)
+      ORDER BY updated_at DESC
+      LIMIT ?`,
+    [limit]
+  );
+  return rows || [];
 }
 
 module.exports = {
-  STATUS_MAP,
+  // state machine
   codeToName,
   nameToCode,
   isFinalStatus,
   nextStatus,
+
+  // storage
   ensureWorkflowForThread,
   getWorkflowRowByThread,
   getStatusCodeByThread,
   setStatusByThread,
+  deleteWorkflowByThread,
+
+  // lookups
   resolveUserCidByDiscord,
+  getOpenWorkflows,
 };

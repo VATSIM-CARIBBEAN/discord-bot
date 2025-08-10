@@ -9,36 +9,47 @@ const {
   ChannelType,
 } = require('discord.js');
 
-const { ensureWorkflowForThread } = require('./local_library/workflow');
+const {
+  ensureWorkflowForThread,
+  deleteWorkflowByThread,
+} = require('./local_library/workflow');
+
 const { decisionRowForStep, buildStep1Intro } = require('./commands/workflow/_shared');
 const handleWorkflowButton = require('./commands/workflow/buttons');
+const { refreshBoard } = require('./commands/workflow/board');
 
-/** ===== Config ===== */
-const GUILD_ID = process.env.GUILD_ID || '431572698678951937';
-const FORUM_CHANNEL_ID = process.env.FORUM_CHANNEL_ID || '1403932322260058212';
-/** ================== */
+// ===== Config from .env =====
+const DISCORD_TOKEN     = process.env.BOT_TOKEN;
+const GUILD_ID          = process.env.GUILD_ID;
+const FORUM_CHANNEL_ID  = process.env.FORUM_CHANNEL_ID; // change-request forum
 
-const DISCORD_TOKEN = process.env.BOT_TOKEN;
-if (!DISCORD_TOKEN) {
-  console.error('❌ Missing BOT_TOKEN in .env');
+if (!DISCORD_TOKEN || !GUILD_ID || !FORUM_CHANNEL_ID) {
+  console.error('Missing one of BOT_TOKEN, GUILD_ID, FORUM_CHANNEL_ID in .env');
   process.exit(1);
 }
 
 const client = new Client({
   intents: [
-    GatewayIntentBits.Guilds,         // required for threads + interactions
-    GatewayIntentBits.GuildMessages,  // to post messages in threads
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
   ],
   partials: [Partials.Channel, Partials.Message],
 });
 
-client.once('ready', (bot) => {
+client.once('ready', async (bot) => {
   console.log(`🤖 Logged in as ${bot.user.tag}`);
-  console.log(`🏠 Guild ID: ${GUILD_ID}`);
-  console.log(`🧵 Forum Channel ID: ${FORUM_CHANNEL_ID}`);
+  console.log(`🏠 Guild: ${GUILD_ID}`);
+  console.log(`🧵 Forum channel: ${FORUM_CHANNEL_ID}`);
+
+  // Refresh the fixed "Open Workflows" board at startup
+  try { await refreshBoard(client); } catch (e) {
+    console.warn('Board refresh on ready failed:', e.message);
+  }
 });
 
-/* --- New forum thread → create DB row + post intro with buttons (short delay) --- */
+/**
+ * New forum post (thread) → create DB row, send Step 1 intro, refresh board
+ */
 client.on(Events.ThreadCreate, async (thread) => {
   try {
     if (thread.parent?.type !== ChannelType.GuildForum) return;
@@ -49,26 +60,31 @@ client.on(Events.ThreadCreate, async (thread) => {
 
     const intro = buildStep1Intro(thread.ownerId);
 
-    // small delay so the thread starter message exists (avoids 40058)
     setTimeout(async () => {
       try {
         await thread.send({ content: intro, components: [decisionRowForStep(0)] });
       } catch (err) {
         console.error(`Intro send failed in ${thread.id}:`, err?.code || err);
       }
+      try { await refreshBoard(client); } catch {}
     }, 2500);
   } catch (err) {
     console.error('Error handling ThreadCreate:', err);
   }
 });
 
-/* -------- Button interactions router -------- */
+/**
+ * Button interactions (Continue / Change / Veto …)
+ */
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (!interaction.isButton()) return;
     if (interaction.guildId !== GUILD_ID) return;
 
     await handleWorkflowButton(interaction);
+
+    // After any action, keep the board fresh
+    try { await refreshBoard(interaction.client); } catch {}
   } catch (err) {
     console.error('Button handler error:', err);
     if (interaction.deferred || interaction.replied) {
@@ -79,8 +95,45 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-/* -------- Shutdown -------- */
-process.on('SIGINT', () => { console.log('Shutting down…'); client.destroy(); process.exit(0); });
-process.on('SIGTERM', () => { console.log('Shutting down…'); client.destroy(); process.exit(0); });
+/**
+ * When a workflow thread is manually deleted:
+ * - delete the row from DB
+ * - refresh the Open Workflows board
+ */
+client.on(Events.ThreadDelete, async (thread) => {
+  try {
+    if (thread?.guildId !== GUILD_ID) return;
+    await deleteWorkflowByThread(thread.id).catch(() => {});
+    await refreshBoard(client).catch(() => {});
+    console.log(`🗑️ Thread ${thread.id} deleted → row removed from DB`);
+  } catch (err) {
+    console.error('Error handling ThreadDelete:', err);
+  }
+});
+
+/**
+ * Safety net: Some gateways deliver thread deletions via ChannelDelete
+ */
+client.on(Events.ChannelDelete, async (channel) => {
+  try {
+    if (typeof channel?.isThread === 'function' && channel.isThread()) {
+      if (channel.guildId !== GUILD_ID) return;
+      await deleteWorkflowByThread(channel.id).catch(() => {});
+      await refreshBoard(client).catch(() => {});
+      console.log(`🗑️ (ChannelDelete) Thread ${channel.id} deleted → row removed from DB`);
+    }
+  } catch (err) {
+    console.error('Error handling ChannelDelete:', err);
+  }
+});
+
+/* graceful shutdown */
+function shutdown() {
+  console.log('Shutting down…');
+  client.destroy();
+  process.exit(0);
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 client.login(DISCORD_TOKEN);
