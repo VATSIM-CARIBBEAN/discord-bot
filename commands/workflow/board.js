@@ -1,26 +1,43 @@
 // commands/workflow/board.js
-// Fixed "Open Workflows" board updater (no auto-create)
+const { getOpenWorkflows, codeToName, deleteWorkflowByThread } = require('../../local_library/workflow');
+const { EmbedBuilder } = require('discord.js');
 
-const { getOpenWorkflows, codeToName } = require('../../local_library/workflow');
-
-// >>> Fixed IDs you gave <<<
+// Fixed IDs you gave
 const WORKFLOW_BOARD_THREAD_ID  = '1403972536102031403';
 const WORKFLOW_BOARD_MESSAGE_ID = '1403972536102031403';
 
+async function removeStaleWorkflows(client) {
+  const rows = await getOpenWorkflows();
+  if (!rows || !rows.length) return;
+
+  for (const r of rows) {
+    try {
+      const thread = await client.channels.fetch(r.discord_forumid).catch(() => null);
+      if (!thread) {
+        console.log(`🗑 Removing stale workflow from DB: ${r.title} (${r.discord_forumid})`);
+        await deleteWorkflowByThread(r.discord_forumid);
+      }
+    } catch (err) {
+      console.error('Error checking stale workflow:', err);
+    }
+  }
+}
+
 /**
- * Build the board message content from open workflows.
- * Each line: - [Title](link) — STATUS
+ * Build the board embed from open workflows.
  */
-async function buildBoardContent() {
+async function buildBoardEmbed(client) {
+  await removeStaleWorkflows(client);
   const guildId = process.env.GUILD_ID;
   const rows = await getOpenWorkflows(); // status 0..3
 
+  const embed = new EmbedBuilder()
+    .setTitle('Open Workflows')
+    .setColor('#29b473');
+
   if (!rows || rows.length === 0) {
-    return [
-      '## Open Workflows',
-      '',
-      'No open workflows at the moment.',
-    ].join('\n');
+    embed.setDescription('No open workflows at the moment.');
+    return embed;
   }
 
   const lines = rows.map(r => {
@@ -30,7 +47,8 @@ async function buildBoardContent() {
     return `- [${safeTitle}](${link}) — **${status}**`;
   });
 
-  return ['## Open Workflows', '', ...lines].join('\n');
+  embed.setDescription(lines.join('\n'));
+  return embed;
 }
 
 /**
@@ -50,12 +68,11 @@ async function refreshBoard(client) {
       return;
     }
 
-    const content = await buildBoardContent();
-    await msg.edit({ content }).catch(err => {
+    const embed = await buildBoardEmbed(client);
+    await msg.edit({ embeds: [embed], content: '' }).catch(err => {
       console.error('❌ Failed to edit board message:', err.message || err);
     });
 
-    // keep it locked (no one can post)
     try { await thread.setLocked(true); } catch {}
 
   } catch (err) {

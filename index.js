@@ -8,6 +8,7 @@ const {
   Partials,
   Events,
   ChannelType,
+  EmbedBuilder,
 } = require('discord.js');
 
 const {
@@ -49,14 +50,17 @@ client.once('ready', async (bot) => {
   hbHandle = startHeartbeat(HB_URL, HB_INTERVAL);
   console.log('Better Stack heartbeat started.');
 
-  // Refresh the fixed "Open Workflows" board at startup
-  try { await refreshBoard(client); } catch (e) {
+  // Refresh the fixed "Open Workflows" board at startup (will also remove stale)
+  try { 
+    await refreshBoard(client);
+    console.log('🗂 Workflow board refreshed and stale entries removed.');
+  } catch (e) {
     console.warn('Board refresh on ready failed:', e.message);
   }
 });
 
 /**
- * New forum post (thread) → create DB row, send Step 1 intro, refresh board
+ * New forum post (thread) → create DB row, send Step 1 intro (embed), refresh board
  */
 client.on(Events.ThreadCreate, async (thread) => {
   try {
@@ -66,11 +70,19 @@ client.on(Events.ThreadCreate, async (thread) => {
 
     await ensureWorkflowForThread({ thread, initialRequesterId: thread.ownerId });
 
-    const intro = buildStep1Intro(thread.ownerId);
+    const introText = buildStep1Intro(thread.ownerId);
+    const embed = new EmbedBuilder()
+      .setDescription(introText)
+      .setColor('#2F3136')
+      .setFooter({ text: 'Previous: N/A | Current: INITIAL LEADERSHIP REVIEW | Next: STAFF REVIEW' });
 
     setTimeout(async () => {
       try {
-        await thread.send({ content: intro, components: [decisionRowForStep(0)] });
+        await thread.send({ 
+          content: `<@${thread.ownerId}>`, 
+          embeds: [embed], 
+          components: [decisionRowForStep(0)] 
+        });
       } catch (err) {
         console.error(`Intro send failed in ${thread.id}:`, err?.code || err);
       }
