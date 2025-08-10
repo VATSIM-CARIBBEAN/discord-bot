@@ -44,6 +44,16 @@ function buildWorkflowEmbed(description, currentCode) {
     });
 }
 
+/**
+ * Extract mentions from text, return { cleanText, mentions }
+ */
+function extractMentions(text) {
+  const mentionRegex = /<@&?\d+>/g;
+  const mentions = text.match(mentionRegex) || [];
+  const cleanText = text.replace(mentionRegex, '').trim();
+  return { cleanText, mentions };
+}
+
 /** Remove buttons from the message that was clicked */
 async function removeButtonsFromClickedMessage(interaction) {
   try {
@@ -52,10 +62,18 @@ async function removeButtonsFromClickedMessage(interaction) {
   } catch (_) {}
 }
 
+async function sendWorkflowStep(thread, stepText, currentCode, components) {
+  const { cleanText, mentions } = extractMentions(stepText);
+  await thread.send({
+    content: mentions.join(' '), // tag only relevant members/roles outside embed
+    embeds: [buildWorkflowEmbed(cleanText, currentCode)],
+    components: components || [],
+  });
+}
+
 async function handleContinue(interaction, thread, row, currentCode) {
   const changeRequestedView =
     currentCode === 0 && (await needsRestartAfterStep1Change(interaction, thread));
-  const requesterDiscordId = thread.ownerId;
 
   const allowed = await ensureAuthorized(
     interaction,
@@ -77,16 +95,12 @@ async function handleContinue(interaction, thread, row, currentCode) {
   }
 
   if (changeRequestedView) {
-    await thread.send({
-      content: `<@${interaction.user.id}> <@${requesterDiscordId}>`,
-      embeds: [
-        buildWorkflowEmbed(
-          buildStep1(interaction.user.id, requesterDiscordId),
-          0
-        ),
-      ],
-      components: [decisionRowForStep(0)],
-    });
+    await sendWorkflowStep(
+      thread,
+      buildStep1(interaction.user.id, thread.ownerId),
+      0,
+      [decisionRowForStep(0)]
+    );
     await removeButtonsFromClickedMessage(interaction);
     try { await refreshBoard(interaction.client); } catch {}
     return interaction.deferUpdate().catch(() => {});
@@ -105,29 +119,33 @@ async function handleContinue(interaction, thread, row, currentCode) {
   }
 
   if (currentCode === 0 && nxt === 1) {
-    await thread.send({
-      content: `<@${interaction.user.id}> <@${requesterDiscordId}>`,
-      embeds: [buildWorkflowEmbed(buildStep2(interaction.user.id, requesterDiscordId), 1)],
-      components: [decisionRowForStep(1)],
-    });
+    await sendWorkflowStep(
+      thread,
+      buildStep2(interaction.user.id, thread.ownerId),
+      1,
+      [decisionRowForStep(1)]
+    );
   } else if (currentCode === 1 && nxt === 2) {
-    await thread.send({
-      content: `<@${interaction.user.id}> <@${requesterDiscordId}>`,
-      embeds: [buildWorkflowEmbed(buildStep3(interaction.user.id, requesterDiscordId), 2)],
-      components: [decisionRowForStep(2)],
-    });
+    await sendWorkflowStep(
+      thread,
+      buildStep3(interaction.user.id, thread.ownerId),
+      2,
+      [decisionRowForStep(2)]
+    );
   } else if (currentCode === 2 && nxt === 3) {
-    await thread.send({
-      content: `<@${interaction.user.id}> <@${requesterDiscordId}>`,
-      embeds: [buildWorkflowEmbed(buildStep4(interaction.user.id, requesterDiscordId), 3)],
-      components: [decisionRowForStep(3)],
-    });
+    await sendWorkflowStep(
+      thread,
+      buildStep4(interaction.user.id, thread.ownerId),
+      3,
+      [decisionRowForStep(3)]
+    );
   } else if (currentCode === 3 && nxt === 4) {
     await tryRename(thread, 'COMPLETE');
-    await thread.send({
-      content: `<@${interaction.user.id}>`,
-      embeds: [buildWorkflowEmbed(buildPublished(interaction.user.id), 4)],
-    });
+    await sendWorkflowStep(
+      thread,
+      buildPublished(interaction.user.id),
+      4
+    );
     try { await thread.setLocked(true); await thread.setArchived(true); } catch (_) {}
   }
 
@@ -139,7 +157,6 @@ async function handleContinue(interaction, thread, row, currentCode) {
 async function handleChange(interaction, thread, row, currentCode) {
   const changeRequestedView =
     currentCode === 0 && (await needsRestartAfterStep1Change(interaction, thread));
-  const requesterDiscordId = thread.ownerId;
 
   const allowed = await ensureAuthorized(
     interaction,
@@ -166,22 +183,24 @@ async function handleChange(interaction, thread, row, currentCode) {
       });
     }
 
-    await thread.send({
-      content: `<@${interaction.user.id}> <@${requesterDiscordId}>`,
-      embeds: [buildWorkflowEmbed(buildChangeRequested(interaction.user.id, requesterDiscordId), 0)],
-      components: [continueOnlyRow()],
-    });
+    await sendWorkflowStep(
+      thread,
+      buildChangeRequested(interaction.user.id, thread.ownerId),
+      0,
+      [continueOnlyRow()]
+    );
     await removeButtonsFromClickedMessage(interaction);
     try { await refreshBoard(interaction.client); } catch {}
     return interaction.deferUpdate().catch(() => {});
   }
 
   if (currentCode === 0) {
-    await thread.send({
-      content: `<@${interaction.user.id}> <@${requesterDiscordId}>`,
-      embeds: [buildWorkflowEmbed(buildChangeRequested(interaction.user.id, requesterDiscordId), 0)],
-      components: [continueOnlyRow()],
-    });
+    await sendWorkflowStep(
+      thread,
+      buildChangeRequested(interaction.user.id, thread.ownerId),
+      0,
+      [continueOnlyRow()]
+    );
     await removeButtonsFromClickedMessage(interaction);
     try { await refreshBoard(interaction.client); } catch {}
     return interaction.deferUpdate().catch(() => {});
@@ -214,10 +233,11 @@ async function handleVeto(interaction, thread, row) {
   }
 
   await tryRename(thread, 'VETOED');
-  await thread.send({
-    content: `<@${interaction.user.id}>`,
-    embeds: [buildWorkflowEmbed(buildVetoed(interaction.user.id), 5)],
-  });
+  await sendWorkflowStep(
+    thread,
+    buildVetoed(interaction.user.id),
+    5
+  );
   try { await thread.setLocked(true); await thread.setArchived(true); } catch (_) {}
 
   await removeButtonsFromClickedMessage(interaction);
@@ -246,10 +266,11 @@ async function handlePublish(interaction, thread, row) {
   }
 
   await tryRename(thread, 'COMPLETE');
-  await thread.send({
-    content: `<@${interaction.user.id}>`,
-    embeds: [buildWorkflowEmbed(buildPublished(interaction.user.id), 4)],
-  });
+  await sendWorkflowStep(
+    thread,
+    buildPublished(interaction.user.id),
+    4
+  );
   try { await thread.setLocked(true); await thread.setArchived(true); } catch (_) {}
 
   await removeButtonsFromClickedMessage(interaction);

@@ -42,6 +42,14 @@ const client = new Client({
 
 let hbHandle = null;
 
+// Extract mentions from text for outside embed
+function extractMentions(text) {
+  const mentionRegex = /<@&?\d+>/g;
+  const mentions = text.match(mentionRegex) || [];
+  const cleanText = text.replace(mentionRegex, '').trim();
+  return { cleanText, mentions };
+}
+
 client.once('ready', async (bot) => {
   console.log(`🤖 Logged in as ${bot.user.tag}`);
   console.log(`🏠 Guild: ${GUILD_ID}`);
@@ -50,7 +58,7 @@ client.once('ready', async (bot) => {
   hbHandle = startHeartbeat(HB_URL, HB_INTERVAL);
   console.log('Better Stack heartbeat started.');
 
-  // Refresh the fixed "Open Workflows" board at startup (will also remove stale)
+  // Refresh the fixed "Open Workflows" board at startup (also removes stale entries)
   try { 
     await refreshBoard(client);
     console.log('🗂 Workflow board refreshed and stale entries removed.');
@@ -71,15 +79,17 @@ client.on(Events.ThreadCreate, async (thread) => {
     await ensureWorkflowForThread({ thread, initialRequesterId: thread.ownerId });
 
     const introText = buildStep1Intro(thread.ownerId);
+    const { cleanText, mentions } = extractMentions(introText);
+
     const embed = new EmbedBuilder()
-      .setDescription(introText)
+      .setDescription(cleanText)
       .setColor('#29b473')
-      .setFooter({ text: 'Current: INITIAL LEADERSHIP REVIEW | Next: STAFF REVIEW' });
+      .setFooter({ text: 'Previous: N/A | Current: INITIAL LEADERSHIP REVIEW | Next: STAFF REVIEW' });
 
     setTimeout(async () => {
       try {
         await thread.send({ 
-          content: `<@${thread.ownerId}>`, 
+          content: mentions.join(' '),
           embeds: [embed], 
           components: [decisionRowForStep(0)] 
         });
