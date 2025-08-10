@@ -73,8 +73,8 @@ client.on(Events.ThreadCreate, async (thread) => {
     const introText = buildStep1Intro(thread.ownerId);
     const embed = new EmbedBuilder()
       .setDescription(introText)
-      .setColor('#2F3136')
-      .setFooter({ text: 'Previous: N/A | Current: INITIAL LEADERSHIP REVIEW | Next: STAFF REVIEW' });
+      .setColor('#29b473')
+      .setFooter({ text: 'Current: INITIAL LEADERSHIP REVIEW | Next: STAFF REVIEW' });
 
     setTimeout(async () => {
       try {
