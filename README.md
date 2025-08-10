@@ -52,6 +52,19 @@ Currently, it is used for **workflow automation** to manage and approve change r
     node index.js
     ```
 
+You can use process manager on a virtual machine to keep your bot running 24/7. Oracle offers a 24/7 free tier virtual machine which you can set up.
+
+## Updating 
+
+If you have set up the bot on an ubuntu virtual machine such as Oracle, you can pull the latest update by running the following commands:
+
+```bash
+cd ~/Discord-Bot
+git pull
+npm ci
+pm2 restart discord-bot # if you use process manager
+```
+
 ## Planned Features
 
 ## License
