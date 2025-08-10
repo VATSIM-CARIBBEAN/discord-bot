@@ -25,6 +25,9 @@ const { refreshBoard } = require('./board');
 const { EmbedBuilder } = require('discord.js');
 const { codeToName } = require('../../local_library/workflow');
 
+/**
+ * Build the workflow embed with footer
+ */
 function buildWorkflowEmbed(description, currentCode, customColor = '#29b473') {
   const prevPhase =
     currentCode > 0 && currentCode <= 3 ? codeToName(currentCode - 1) : 'N/A';
@@ -42,43 +45,34 @@ function buildWorkflowEmbed(description, currentCode, customColor = '#29b473') {
 }
 
 /**
- * Extract mentions but preserve all mentions inside parentheses (e.g., roles in Staff Member Needed).
+ * Extract all mentions from the text (for outside pings)
  */
 function extractMentions(text) {
-  let cleaned = text.trim();
-
   const mentionRegex = /<@&?\d+>/g;
-  const allMentions = cleaned.match(mentionRegex) || [];
-  const uniqueMentions = [...new Set(allMentions)];
-
-  // Only remove mentions outside parentheses to avoid wiping Staff Member lines
-  uniqueMentions.forEach(m => {
-    const inParensPattern = new RegExp(`\\(${m}\\)`);
-    if (!inParensPattern.test(cleaned)) {
-      cleaned = cleaned.replace(new RegExp(m, 'g'), '').trim();
-    }
-  });
-
-  return {
-    cleanText: cleaned,
-    mentionsOutside: uniqueMentions,
-  };
+  const mentions = text.match(mentionRegex) || [];
+  return [...new Set(mentions)];
 }
 
+/**
+ * Send workflow step as embed + pings
+ */
+async function sendWorkflowStep(thread, stepText, currentCode, components, colorOverride) {
+  const mentionsOutside = extractMentions(stepText);
+  await thread.send({
+    content: mentionsOutside.join(' '),
+    embeds: [buildWorkflowEmbed(stepText, currentCode, colorOverride)],
+    components: components || [],
+  });
+}
+
+/**
+ * Remove buttons from the clicked message
+ */
 async function removeButtonsFromClickedMessage(interaction) {
   try {
     if (!interaction?.message?.editable) return;
     await interaction.message.edit({ components: [] });
   } catch (_) {}
-}
-
-async function sendWorkflowStep(thread, stepText, currentCode, components, colorOverride) {
-  const { cleanText, mentionsOutside } = extractMentions(stepText);
-  await thread.send({
-    content: mentionsOutside.join(' '),
-    embeds: [buildWorkflowEmbed(cleanText, currentCode, colorOverride)],
-    components: components || [],
-  });
 }
 
 async function handleContinue(interaction, thread, row, currentCode) {
@@ -87,14 +81,25 @@ async function handleContinue(interaction, thread, row, currentCode) {
 
   const allowed = await ensureAuthorized(interaction, currentCode, row.requester, changeRequestedView);
   if (!allowed) {
-    return interaction.reply({ content: 'You do not have permission to run commands at this step.', ephemeral: true });
+    return interaction.reply({
+      content: 'You do not have permission to run commands at this step.',
+      ephemeral: true,
+    });
   }
   if (isFinalStatus(currentCode)) {
-    return interaction.reply({ content: 'This workflow is already complete.', ephemeral: true });
+    return interaction.reply({
+      content: 'This workflow is already complete.',
+      ephemeral: true,
+    });
   }
 
   if (changeRequestedView) {
-    await sendWorkflowStep(thread, buildStep1(interaction.user.id, thread.ownerId), 0, [decisionRowForStep(0)]);
+    await sendWorkflowStep(
+      thread,
+      buildStep1(interaction.user.id, thread.ownerId),
+      0,
+      [decisionRowForStep(0)]
+    );
     await removeButtonsFromClickedMessage(interaction);
     try { await refreshBoard(interaction.client); } catch {}
     return interaction.deferUpdate().catch(() => {});
@@ -132,7 +137,10 @@ async function handleChange(interaction, thread, row, currentCode) {
 
   const allowed = await ensureAuthorized(interaction, currentCode, row.requester, changeRequestedView);
   if (!allowed) {
-    return interaction.reply({ content: 'You do not have permission to run commands at this step.', ephemeral: true });
+    return interaction.reply({
+      content: 'You do not have permission to run commands at this step.',
+      ephemeral: true,
+    });
   }
 
   if (currentCode === 2) {
@@ -163,7 +171,10 @@ async function handleChange(interaction, thread, row, currentCode) {
 async function handleVeto(interaction, thread, row) {
   const allowed = await ensureAuthorized(interaction, 3, row.requester, false);
   if (!allowed) {
-    return interaction.reply({ content: 'You do not have permission to run commands at this step.', ephemeral: true });
+    return interaction.reply({
+      content: 'You do not have permission to run commands at this step.',
+      ephemeral: true,
+    });
   }
 
   const actorCid = await getActorCidOrEphemeral(interaction);
@@ -186,7 +197,10 @@ async function handleVeto(interaction, thread, row) {
 async function handlePublish(interaction, thread, row) {
   const allowed = await ensureAuthorized(interaction, 3, row.requester, false);
   if (!allowed) {
-    return interaction.reply({ content: 'You do not have permission to run commands at this step.', ephemeral: true });
+    return interaction.reply({
+      content: 'You do not have permission to run commands at this step.',
+      ephemeral: true,
+    });
   }
 
   const actorCid = await getActorCidOrEphemeral(interaction);
@@ -209,7 +223,10 @@ async function handlePublish(interaction, thread, row) {
 module.exports = async function handleWorkflowButton(interaction) {
   const thread = interaction.channel;
   if (!thread?.isThread?.()) {
-    return interaction.reply({ content: 'Use these buttons inside a workflow thread.', ephemeral: true });
+    return interaction.reply({
+      content: 'Use these buttons inside a workflow thread.',
+      ephemeral: true,
+    });
   }
 
   await ensureWorkflowForThread({ thread, initialRequesterId: thread.ownerId });

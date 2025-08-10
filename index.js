@@ -16,13 +16,16 @@ const {
   deleteWorkflowByThread,
 } = require('./local_library/workflow');
 
-const { decisionRowForStep, buildStep1Intro } = require('./commands/workflow/_shared');
+const {
+  decisionRowForStep,
+  buildStep1Intro,
+} = require('./commands/workflow/_shared');
 const handleWorkflowButton = require('./commands/workflow/buttons');
 const { refreshBoard } = require('./commands/workflow/board');
 
-const DISCORD_TOKEN     = process.env.BOT_TOKEN;
-const GUILD_ID          = process.env.GUILD_ID;
-const FORUM_CHANNEL_ID  = process.env.FORUM_CHANNEL_ID;
+const DISCORD_TOKEN = process.env.BOT_TOKEN;
+const GUILD_ID = process.env.GUILD_ID;
+const FORUM_CHANNEL_ID = process.env.FORUM_CHANNEL_ID;
 const HB_URL = process.env.BETTERSTACK_HEARTBEAT_URL;
 const HB_INTERVAL = Number(process.env.BETTERSTACK_HEARTBEAT_INTERVAL_MS || 60000);
 
@@ -32,31 +35,19 @@ if (!DISCORD_TOKEN || !GUILD_ID || !FORUM_CHANNEL_ID) {
 }
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-  ],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
   partials: [Partials.Channel, Partials.Message],
 });
 
 let hbHandle = null;
 
+/**
+ * Extract mentions from embed text so we can ping them outside of embed too
+ */
 function extractMentions(text) {
-  const systemLine = /^\s*issued the command .*$/im;
-  let cleaned = text.replace(systemLine, '').trim();
-
   const mentionRegex = /<@&?\d+>/g;
-  const allMentions = cleaned.match(mentionRegex) || [];
-  const uniqueMentions = [...new Set(allMentions)];
-
-  uniqueMentions.forEach(m => {
-    const requesterPattern = new RegExp(`Requester\\s*\\(${m}\\)`, 'i');
-    if (!requesterPattern.test(cleaned)) {
-      cleaned = cleaned.replace(new RegExp(m, 'g'), '').trim();
-    }
-  });
-
-  return { cleanText: cleaned, mentionsOutside: uniqueMentions };
+  const mentions = text.match(mentionRegex) || [];
+  return [...new Set(mentions)];
 }
 
 client.once('ready', async (bot) => {
@@ -67,7 +58,7 @@ client.once('ready', async (bot) => {
   hbHandle = startHeartbeat(HB_URL, HB_INTERVAL);
   console.log('Better Stack heartbeat started.');
 
-  try { 
+  try {
     await refreshBoard(client);
     console.log('🗂 Workflow board refreshed and stale entries removed.');
   } catch (e) {
@@ -81,27 +72,34 @@ client.on(Events.ThreadCreate, async (thread) => {
     if (thread.guildId !== GUILD_ID) return;
     if (thread.parentId !== FORUM_CHANNEL_ID) return;
 
+    // Create workflow row for this thread
     await ensureWorkflowForThread({ thread, initialRequesterId: thread.ownerId });
 
+    // Build Step 1 embed
     const introText = buildStep1Intro(thread.ownerId);
-    const { cleanText, mentionsOutside } = extractMentions(introText);
+    const mentions = extractMentions(introText);
 
     const embed = new EmbedBuilder()
-      .setDescription(cleanText)
+      .setDescription(introText)
       .setColor('#29b473')
-      .setFooter({ text: 'Previous: N/A | Current: INITIAL LEADERSHIP REVIEW | Next: STAFF REVIEW' });
+      .setFooter({
+        text: 'Previous: N/A | Current: INITIAL LEADERSHIP REVIEW | Next: STAFF REVIEW',
+      });
 
+    // Send after small delay so thread is ready
     setTimeout(async () => {
       try {
-        await thread.send({ 
-          content: mentionsOutside.join(' '),
-          embeds: [embed], 
-          components: [decisionRowForStep(0)] 
+        await thread.send({
+          content: mentions.join(' '),
+          embeds: [embed],
+          components: [decisionRowForStep(0)],
         });
       } catch (err) {
         console.error(`Intro send failed in ${thread.id}:`, err?.code || err);
       }
-      try { await refreshBoard(client); } catch {}
+      try {
+        await refreshBoard(client);
+      } catch {}
     }, 2500);
   } catch (err) {
     console.error('Error handling ThreadCreate:', err);
@@ -114,13 +112,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.guildId !== GUILD_ID) return;
 
     await handleWorkflowButton(interaction);
-    try { await refreshBoard(interaction.client); } catch {}
+    try {
+      await refreshBoard(interaction.client);
+    } catch {}
   } catch (err) {
     console.error('Button handler error:', err);
     if (interaction.deferred || interaction.replied) {
-      try { await interaction.followUp({ content: 'Something went wrong.', ephemeral: true }); } catch {}
+      try {
+        await interaction.followUp({
+          content: 'Something went wrong.',
+          ephemeral: true,
+        });
+      } catch {}
     } else {
-      try { await interaction.reply({ content: 'Something went wrong.', ephemeral: true }); } catch {}
+      try {
+        await interaction.reply({
+          content: 'Something went wrong.',
+          ephemeral: true,
+        });
+      } catch {}
     }
   }
 });
@@ -142,7 +152,9 @@ client.on(Events.ChannelDelete, async (channel) => {
       if (channel.guildId !== GUILD_ID) return;
       await deleteWorkflowByThread(channel.id).catch(() => {});
       await refreshBoard(client).catch(() => {});
-      console.log(`🗑️ (ChannelDelete) Thread ${channel.id} deleted → row removed from DB`);
+      console.log(
+        `🗑️ (ChannelDelete) Thread ${channel.id} deleted → row removed from DB`
+      );
     }
   } catch (err) {
     console.error('Error handling ChannelDelete:', err);
@@ -156,6 +168,8 @@ function shutdown() {
 }
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-process.on('beforeExit', () => { if (hbHandle) hbHandle.stop(); });
+process.on('beforeExit', () => {
+  if (hbHandle) hbHandle.stop();
+});
 
 client.login(DISCORD_TOKEN);

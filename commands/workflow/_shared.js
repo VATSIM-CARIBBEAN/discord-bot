@@ -37,16 +37,10 @@ async function tryRename(thread, tag) {
 
 /* ===== Action header (mentions actor) ===== */
 function actionHeader(userId, label) {
-  return `__<@${userId}> issued the command **${label}**.__\n`;
+  return `<@${userId}> issued the command **${label}**\n`;
 }
 
-/* ===== Decision buttons (step-aware) =====
-   stepCode: 0 Initial Leadership Review → Continue, Change, Veto
-             1 Staff Review              → Continue
-             2 Technical Review          → Continue, Change
-             3 Final Comprehensive       → Continue, Veto
-             >=4 terminal                → none
-*/
+/* ===== Decision buttons (step-aware) ===== */
 function decisionRowForStep(stepCode) {
   if (stepCode >= 4) return undefined;
 
@@ -63,7 +57,6 @@ function decisionRowForStep(stepCode) {
   return row;
 }
 
-/* Continue-only (used for the Change Requested variant in Step 1) */
 function continueOnlyRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('wf_continue').setLabel('Continue').setStyle(ButtonStyle.Success),
@@ -96,7 +89,7 @@ function buildStep1Intro(requesterId) {
 function buildStep1(actorId, requesterId) {
   return [
     '## **Phase 1 — Initial Leadership Review**',
-    `> *<@${actorId}> issued the command **Continue***`,
+    `${actionHeader(actorId, 'Continue')}`,
     'The leadership team should review the proposed change for justification and compliance.',
     '',
     '**Staff Member Response Needed**',
@@ -117,7 +110,7 @@ function buildStep1(actorId, requesterId) {
 function buildChangeRequested(actorId, requesterId) {
   return [
     '## **Phase 1 — Change Requested**',
-    `> *<@${actorId}> issued the command **Change Requested***`,
+    `${actionHeader(actorId, 'Change Requested')}`,
     'The leadership team has requested modifications to the original change request. Please review their request and provide updated information.',
     '',
     '**Staff Member Response Needed**',
@@ -134,7 +127,7 @@ function buildChangeRequested(actorId, requesterId) {
 function buildStep2(actorId, requesterId) {
   return [
     '## **Phase 2 — Staff Review**',
-    `> *<@${actorId}> issued the command **Continue***`,
+    `${actionHeader(actorId, 'Continue')}`,
     'Leadership has approved the request. The requestor should begin working with all relevant parties to complete the process.',
     '',
     '**Staff Member Response Needed**',
@@ -153,7 +146,7 @@ function buildStep2(actorId, requesterId) {
 function buildStep3(actorId, requesterId) {
   return [
     '## **Phase 3 — Technical/Divisional Review**',
-    `> *<@${actorId}> issued the command **Continue***`,
+    `${actionHeader(actorId, 'Continue')}`,
     'Awaiting responses from divisional teams or other staff for technical/operational readiness.',
     '',
     '**Staff Member Response Needed**',
@@ -174,7 +167,7 @@ function buildStep3(actorId, requesterId) {
 function buildStep4(actorId, requesterId) {
   return [
     '## **Phase 4 — Final Comprehensive Review**',
-    `> *<@${actorId}> issued the command **Continue***`,
+    `${actionHeader(actorId, 'Continue')}`,
     'Final review before the change goes live. This is the responsibility of the requestor. All action items are complete and the changes should be published.',
     '',
     '**Staff Member Response Needed**',
@@ -193,21 +186,23 @@ function buildStep4(actorId, requesterId) {
 function buildPublished(actorId) {
   return [
     '## **Change Published**',
-    `> *<@${actorId}> issued the command **Continue***`,
-    '# Change published and released. No further action is needed. To amend, please open a new change workflow request.',
+    `${actionHeader(actorId, 'Continue')}`,
+    '✅ **Change published and released.**',
+    'No further action is needed. To amend, please open a new change workflow request.',
   ].join('\n');
 }
 
 function buildVetoed(actorId) {
   return [
     '## **Change Vetoed**',
-    `> *<@${actorId}> issued the command **Veto***`,
-    '# The change was vetoed by the leadership team and will no longer be considered. For a new change, please open a new thread and start the workflow process.',
+    `${actionHeader(actorId, 'Veto')}`,
+    '❌ **The change has been vetoed and will no longer proceed.**',
+    'This workflow is now closed.',
   ].join('\n');
 }
 
 /* ===== Permissions per step ===== */
-const LEADERSHIP_ROLE_IDS = new Set(['777561969074896904', '777551676181708840']); // keep both leadership roles
+const LEADERSHIP_ROLE_IDS = new Set(['777561969074896904', '777551676181708840']);
 
 function hasLeadership(interaction) {
   const m = interaction.member;
@@ -260,19 +255,14 @@ async function getActorCidOrEphemeral(interaction) {
 }
 
 module.exports = {
-  // workflow accessors
   codeToName, nameToCode, isFinalStatus, nextStatus,
   ensureWorkflowForThread, getWorkflowRowByThread, getStatusCodeByThread, setStatusByThread,
-
-  // helpers
   tryRename,
   actionHeader,
   decisionRowForStep,
   continueOnlyRow,
   needsRestartAfterStep1Change,
   ensureAuthorized, getActorCidOrEphemeral,
-
-  // message builders
   buildStep1Intro,
   buildStep1,
   buildChangeRequested,
