@@ -83,7 +83,8 @@ function buildStep1Intro(requesterId) {
     '',
     '**Action Items**',
     '1. Is the change justified?',
-    '2. Does the change violate any compliance regulations, such as the VATSIM GCAP or COC?',
+    '2. Does the change violate any VATSIM policies?',
+    '3. Does the change violate any VATCAR policies?',
     '',
     '**Decision Actions**',
     '- **Continue** – All review action items are complete and no change is required.',
@@ -95,15 +96,16 @@ function buildStep1Intro(requesterId) {
 function buildStep1(actorId, requesterId) {
   return [
     '## **Phase 1 — Initial Leadership Review**',
-    `> *@<@${actorId}> issued the command **Continue***`,
-    'The leadership team reviews the proposed change for justification and compliance.',
+    `> *<@${actorId}> issued the command **Continue***`,
+    'The leadership team should review the proposed change for justification and compliance.',
     '',
     '**Staff Member Response Needed**',
     `- Executive Team (<@&${EXECUTIVE_ROLE_ID}>)`,
     '',
     '**Action Items**',
     '1. Is the change justified?',
-    '2. Does the change violate any compliance regulations, such as the VATSIM GCAP or COC?',
+    '2. Does the change violate any VATSIM policies?',
+    '3. Does the change violate any VATCAR policies?',
     '',
     '**Decision Actions**',
     '- **Continue** – All review action items are complete and no change is required.',
@@ -115,8 +117,8 @@ function buildStep1(actorId, requesterId) {
 function buildChangeRequested(actorId, requesterId) {
   return [
     '## **Phase 1 — Change Requested**',
-    `> *@<@${actorId}> issued the command **Change Requested***`,
-    'The leadership team has requested modifications to the original change request.',
+    `> *<@${actorId}> issued the command **Change Requested***`,
+    'The leadership team has requested modifications to the original change request. Please review their request and provide updated information.',
     '',
     '**Staff Member Response Needed**',
     `- Requester (<@${requesterId}>)`,
@@ -132,8 +134,8 @@ function buildChangeRequested(actorId, requesterId) {
 function buildStep2(actorId, requesterId) {
   return [
     '## **Phase 2 — Staff Review**',
-    `> *@<@${actorId}> issued the command **Continue***`,
-    'Leadership has approved the request; affected staff members now coordinate.',
+    `> *<@${actorId}> issued the command **Continue***`,
+    'Leadership has approved the request. The requestor should begin working with all relevant parties to complete the process.',
     '',
     '**Staff Member Response Needed**',
     `- Requester (<@${requesterId}>)`,
@@ -141,6 +143,7 @@ function buildStep2(actorId, requesterId) {
     '**Action Items**',
     '1. Notify affected staff (Neighboring FIRs, Training Team, etc.).',
     '2. Notify divisional teams needed for the change (technical, marketing, events, etc.).',
+    '3. Complete all items required to publish change from the facility',
     '',
     '**Decision Actions**',
     '- **Continue** – All action items are complete and ready to move forward.',
@@ -150,16 +153,17 @@ function buildStep2(actorId, requesterId) {
 function buildStep3(actorId, requesterId) {
   return [
     '## **Phase 3 — Technical/Divisional Review**',
-    `> *@<@${actorId}> issued the command **Continue***`,
+    `> *<@${actorId}> issued the command **Continue***`,
     'Awaiting responses from divisional teams or other staff for technical/operational readiness.',
     '',
     '**Staff Member Response Needed**',
-    '- Division Team (if applicable)',
+    `- Division Team (if applicable) (<@&${EXECUTIVE_ROLE_ID}>)`,
     '- Any other staff member involved in the change process',
     '',
     '**Action Items**',
     '1. Await responses from affected staff members.',
     '2. Await divisional actions and any associated requests.',
+    '3. Once all teams have responded with a confirmation, continue.',
     '',
     '**Decision Actions**',
     '- **Continue** – All action items are complete.',
@@ -170,8 +174,8 @@ function buildStep3(actorId, requesterId) {
 function buildStep4(actorId, requesterId) {
   return [
     '## **Phase 4 — Final Comprehensive Review**',
-    `> *@<@${actorId}> issued the command **Continue***`,
-    'Final review before the change goes live.',
+    `> *<@${actorId}> issued the command **Continue***`,
+    'Final review before the change goes live. This is the responsibility of the requestor. All action items are complete and the changes should be published.',
     '',
     '**Staff Member Response Needed**',
     `- Requester (<@${requesterId}>)`,
@@ -189,7 +193,7 @@ function buildStep4(actorId, requesterId) {
 function buildPublished(actorId) {
   return [
     '## **Change Published**',
-    `> *@<@${actorId}> issued the command **Continue***`,
+    `> *<@${actorId}> issued the command **Continue***`,
     '# Change published and released. No further action is needed. To amend, please open a new change workflow request.',
   ].join('\n');
 }
@@ -197,7 +201,7 @@ function buildPublished(actorId) {
 function buildVetoed(actorId) {
   return [
     '## **Change Vetoed**',
-    `> *@<@${actorId}> issued the command **Veto***`,
+    `> *<@${actorId}> issued the command **Veto***`,
     '# The change was vetoed by the leadership team and will no longer be considered. For a new change, please open a new thread and start the workflow process.',
   ].join('\n');
 }
