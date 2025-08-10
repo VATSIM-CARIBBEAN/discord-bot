@@ -1,5 +1,6 @@
 // index.js
 require('dotenv').config();
+const { startHeartbeat } = require('./local_library/heartbeat');
 
 const {
   Client,
@@ -22,6 +23,8 @@ const { refreshBoard } = require('./commands/workflow/board');
 const DISCORD_TOKEN     = process.env.BOT_TOKEN;
 const GUILD_ID          = process.env.GUILD_ID;
 const FORUM_CHANNEL_ID  = process.env.FORUM_CHANNEL_ID; // change-request forum
+const HB_URL = process.env.BETTERSTACK_HEARTBEAT_URL;
+const HB_INTERVAL = Number(process.env.BETTERSTACK_HEARTBEAT_INTERVAL_MS || 60000);
 
 if (!DISCORD_TOKEN || !GUILD_ID || !FORUM_CHANNEL_ID) {
   console.error('Missing one of BOT_TOKEN, GUILD_ID, FORUM_CHANNEL_ID in .env');
@@ -36,10 +39,15 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
+let hbHandle = null;
+
 client.once('ready', async (bot) => {
   console.log(`🤖 Logged in as ${bot.user.tag}`);
   console.log(`🏠 Guild: ${GUILD_ID}`);
   console.log(`🧵 Forum channel: ${FORUM_CHANNEL_ID}`);
+
+  hbHandle = startHeartbeat(HB_URL, HB_INTERVAL);
+  console.log('Better Stack heartbeat started.');
 
   // Refresh the fixed "Open Workflows" board at startup
   try { await refreshBoard(client); } catch (e) {
@@ -135,5 +143,6 @@ function shutdown() {
 }
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+process.on('beforeExit', () => { if (hbHandle) hbHandle.stop(); });
 
 client.login(DISCORD_TOKEN);
