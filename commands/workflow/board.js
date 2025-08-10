@@ -1,17 +1,14 @@
 // commands/workflow/board.js
-// Fixed "Open Workflows" board updater (no auto-create)
+// Open Workflows board refresher that validates each row against Discord
+// so closed-then-deleted threads drop off correctly after restarts.
 
 const { getOpenWorkflows, codeToName } = require('../../local_library/workflow');
 
-// >>> Fixed IDs you gave <<<
-const WORKFLOW_BOARD_THREAD_ID  = '1403972536102031403';
-const WORKFLOW_BOARD_MESSAGE_ID = '1403972536102031403';
-
 /**
- * Build the board message content from open workflows.
- * Each line: - [Title](link) — STATUS
+ * Build the board content using only workflows whose threads still exist.
+ * We *do not* mutate the DB here — we just avoid rendering missing threads.
  */
-async function buildBoardContent() {
+async function buildBoardContent(client) {
   const guildId = process.env.GUILD_ID;
   const rows = await getOpenWorkflows(); // status 0..3
 
@@ -23,39 +20,89 @@ async function buildBoardContent() {
     ].join('\n');
   }
 
-  const lines = rows.map(r => {
-    const link = `https://discord.com/channels/${guildId}/${r.discord_forumid}`;
+  // Validate that each workflow’s thread still exists
+  const validated = [];
+  const missing = [];
+
+  for (const r of rows) {
+    const threadId = String(r.discord_forumid || '').trim();
+    if (!threadId) continue;
+
+    try {
+      // If the thread was deleted, this will throw (Unknown Channel).
+      const ch = await client.channels.fetch(threadId, { cache: true });
+      // We don’t care if it’s archived/locked — if it exists, we render it.
+      if (ch) validated.push(r);
+    } catch (err) {
+      // 10003 = Unknown Channel (deleted), 50001 = Missing Access
+      const code = err?.code ?? err?.rawError?.code;
+      if (code === 10003 || code === 50001) {
+        missing.push(r);
+      } else {
+        console.warn('⚠️ Failed to fetch thread', threadId, err?.message || err);
+        // Be defensive and exclude unknown failures as well
+        missing.push(r);
+      }
+    }
+  }
+
+  if (missing.length) {
+    const ids = missing.map(m => m.discord_forumid).join(', ');
+    console.log(`ℹ️ Pruned ${missing.length} missing threads from board render: [${ids}]`);
+  }
+
+  if (validated.length === 0) {
+    return [
+      '## Open Workflows',
+      '',
+      'No open workflows at the moment.',
+    ].join('\n');
+  }
+
+  const lines = validated.map(r => {
     const status = codeToName(r.status) || 'UNKNOWN';
-    const safeTitle = (r.title || '(no title)').replace(/\r?\n/g, ' ').slice(0, 180);
-    return `- [${safeTitle}](${link}) — **${status}**`;
+    const url = `https://discord.com/channels/${guildId}/${r.discord_forumid}`;
+    return `- [${r.title}](${url}) — **${status}**`;
   });
 
-  return ['## Open Workflows', '', ...lines].join('\n');
+  return [
+    '## Open Workflows',
+    '',
+    ...lines,
+  ].join('\n');
 }
 
 /**
- * Edit the fixed message inside the fixed thread with the current board content.
+ * Refresh the fixed “Open Workflows” board message in the board thread.
+ * Requires two env vars:
+ *   WORKFLOW_BOARD_THREAD_ID  — the thread that *contains* the board message
+ *   WORKFLOW_BOARD_MESSAGE_ID — the specific message inside that thread
  */
 async function refreshBoard(client) {
+  const threadId  = process.env.WORKFLOW_BOARD_THREAD_ID;
+  const messageId = process.env.WORKFLOW_BOARD_MESSAGE_ID;
+
+  if (!threadId || !messageId) {
+    console.error('❌ Missing WORKFLOW_BOARD_THREAD_ID or WORKFLOW_BOARD_MESSAGE_ID env vars.');
+    return;
+  }
+
   try {
-    const thread = await client.channels.fetch(WORKFLOW_BOARD_THREAD_ID);
-    if (!thread?.isThread?.()) {
-      console.error(`❌ Board thread not found or not a thread: ${WORKFLOW_BOARD_THREAD_ID}`);
+    const thread = await client.channels.fetch(threadId, { cache: true });
+    if (!thread || !thread.isThread()) {
+      console.error('❌ Board thread is missing or not a thread:', threadId);
       return;
     }
 
-    const msg = await thread.messages.fetch(WORKFLOW_BOARD_MESSAGE_ID).catch(() => null);
-    if (!msg) {
-      console.error(`❌ Board message not found in thread ${WORKFLOW_BOARD_THREAD_ID}: ${WORKFLOW_BOARD_MESSAGE_ID}`);
-      return;
-    }
+    // We don’t create if missing — this file only updates the fixed message.
+    const msg = await thread.messages.fetch(messageId);
 
-    const content = await buildBoardContent();
+    const content = await buildBoardContent(client);
     await msg.edit({ content }).catch(err => {
       console.error('❌ Failed to edit board message:', err.message || err);
     });
 
-    // keep it locked (no one can post)
+    // Keep the board thread locked
     try { await thread.setLocked(true); } catch {}
 
   } catch (err) {
