@@ -9,7 +9,11 @@ const {
   Events,
   ChannelType,
   EmbedBuilder,
+  Collection,
 } = require('discord.js');
+
+const fs = require('fs');
+const path = require('path');
 
 const {
   ensureWorkflowForThread,
@@ -38,6 +42,29 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
   partials: [Partials.Channel, Partials.Message],
 });
+
+// Load slash commands
+client.commands = new Collection();
+function loadCommands(dir) {
+  const files = fs.readdirSync(dir);
+  for (const file of files) {
+    const filePath = path.join(dir, file);
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      loadCommands(filePath);
+    } else if (file.endsWith('.js') && !file.startsWith('_')) {
+      try {
+        const command = require(filePath);
+        if (command.data && command.execute) {
+          client.commands.set(command.data.name, command);
+        }
+      } catch (err) {
+        console.warn(`⚠️  Could not load command ${filePath}:`, err.message);
+      }
+    }
+  }
+}
+loadCommands(path.join(__dirname, 'commands'));
 
 let hbHandle = null;
 
@@ -108,6 +135,33 @@ client.on(Events.ThreadCreate, async (thread) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    // Handle slash commands
+    if (interaction.isChatInputCommand()) {
+      const command = client.commands.get(interaction.commandName);
+      if (!command) {
+        return interaction.reply({
+          content: 'Unknown command.',
+          ephemeral: true,
+        });
+      }
+      try {
+        await command.execute(interaction);
+      } catch (err) {
+        console.error('Command execution error:', err);
+        const reply = {
+          content: 'There was an error executing this command.',
+          ephemeral: true,
+        };
+        if (interaction.deferred || interaction.replied) {
+          await interaction.followUp(reply).catch(() => {});
+        } else {
+          await interaction.reply(reply).catch(() => {});
+        }
+      }
+      return;
+    }
+
+    // Handle workflow buttons
     if (!interaction.isButton()) return;
     if (interaction.guildId !== GUILD_ID) return;
 
