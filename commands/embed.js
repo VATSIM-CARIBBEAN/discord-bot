@@ -79,17 +79,9 @@ module.exports = {
     if (description) embed.setDescription(description);
     embed.setColor(color);
     
-    // Fixed footer with timestamp
-    const timestamp = new Date().toLocaleString('en-US', {
-      timeZone: 'America/New_York',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
-    embed.setFooter({ text: `VATSIM Caribbean Division - ${timestamp}` });
+    // Fixed footer with Discord timestamp
+    embed.setFooter({ text: 'VATSIM Caribbean Division' });
+    embed.setTimestamp();
     
     if (image) {
       try {
