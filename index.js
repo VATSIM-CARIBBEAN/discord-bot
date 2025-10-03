@@ -1,6 +1,7 @@
 // index.js
 require('dotenv').config();
 const { startHeartbeat } = require('./local_library/heartbeat');
+const { startTracker } = require('./local_library/vatsim_tracker');
 
 const {
   Client,
@@ -67,6 +68,7 @@ function loadCommands(dir) {
 loadCommands(path.join(__dirname, 'commands'));
 
 let hbHandle = null;
+let trackerHandle = null;
 
 /**
  * Extract mentions from embed text so we can ping them outside of embed too
@@ -84,6 +86,8 @@ client.once('ready', async (bot) => {
 
   hbHandle = startHeartbeat(HB_URL, HB_INTERVAL);
   console.log('Better Stack heartbeat started.');
+
+  trackerHandle = startTracker(client);
 
   try {
     await refreshBoard(client);
@@ -217,6 +221,7 @@ client.on(Events.ChannelDelete, async (channel) => {
 
 function shutdown() {
   console.log('Shutting down…');
+  if (trackerHandle) trackerHandle.stop();
   client.destroy();
   process.exit(0);
 }
@@ -224,6 +229,7 @@ process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 process.on('beforeExit', () => {
   if (hbHandle) hbHandle.stop();
+  if (trackerHandle) trackerHandle.stop();
 });
 
 client.login(DISCORD_TOKEN);
