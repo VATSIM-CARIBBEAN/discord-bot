@@ -76,7 +76,11 @@ module.exports = {
     const embed = new EmbedBuilder();
 
     if (title) embed.setTitle(title);
-    if (description) embed.setDescription(description);
+    if (description) {
+      // Parse \n as newlines
+      const parsedDescription = description.replace(/\\n/g, '\n');
+      embed.setDescription(parsedDescription);
+    }
     embed.setColor(color);
     
     // Fixed footer with Discord timestamp
