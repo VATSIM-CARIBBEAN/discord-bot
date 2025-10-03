@@ -1,10 +1,13 @@
 // local_library/vatsim_tracker.js
 const axios = require('axios');
 const { EmbedBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
 const VATSIM_DATA_URL = 'https://data.vatsim.net/v3/vatsim-data.json';
 const CHANNEL_ID = '1423619321267093504';
 const POLL_INTERVAL = 2000; // 2 seconds
+const STATE_FILE = path.join(__dirname, '../data/vatsim_state.json');
 
 // Position name mapping
 const POSITION_NAMES = {
@@ -171,6 +174,39 @@ const POSITION_NAMES = {
 const activeControllers = new Map();
 
 /**
+ * Load state from file
+ */
+function loadState() {
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+      for (const [key, value] of Object.entries(data)) {
+        activeControllers.set(key, value);
+      }
+      console.log(`📁 Loaded ${activeControllers.size} active controller(s) from state file`);
+    }
+  } catch (err) {
+    console.warn('Could not load VATSIM state:', err.message);
+  }
+}
+
+/**
+ * Save state to file
+ */
+function saveState() {
+  try {
+    const dir = path.dirname(STATE_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const data = Object.fromEntries(activeControllers);
+    fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
+  } catch (err) {
+    console.error('Could not save VATSIM state:', err.message);
+  }
+}
+
+/**
  * Normalize callsign by removing _I_ or _2_ etc
  */
 function normalizeCallsign(callsign) {
@@ -276,6 +312,7 @@ async function checkControllers(client) {
           logonTime: controller.logon_time,
         });
         
+        saveState();
         console.log(`✈️ ${controller.name} logged on to ${callsign}`);
       }
     }
@@ -295,6 +332,7 @@ async function checkControllers(client) {
         }
         
         activeControllers.delete(callsign);
+        saveState();
       }
     }
     
@@ -309,6 +347,9 @@ async function checkControllers(client) {
 function startTracker(client) {
   console.log('🛫 VATSIM controller tracker started');
   
+  // Load previous state
+  loadState();
+  
   // Initial check after 5 seconds
   setTimeout(() => checkControllers(client), 5000);
   
@@ -318,6 +359,7 @@ function startTracker(client) {
   return {
     stop: () => {
       clearInterval(interval);
+      saveState();
       console.log('🛬 VATSIM controller tracker stopped');
     }
   };
