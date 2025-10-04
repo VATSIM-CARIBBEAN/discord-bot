@@ -8,6 +8,7 @@ const VATSIM_DATA_URL = 'https://data.vatsim.net/v3/vatsim-data.json';
 const CHANNEL_ID = '1423619321267093504';
 const POLL_INTERVAL = 2000; // 2 seconds
 const STATE_FILE = path.join(__dirname, '../data/vatsim_state.json');
+const OBSERVER_FREQUENCY = '199.998';
 
 // Position name mapping
 const POSITION_NAMES = {
@@ -174,8 +175,8 @@ const POSITION_NAMES = {
   'TTZO_FSS': 'Piarco Oceanic'
 };
 
-// In-memory storage for active controllers
-const activeControllers = new Map();
+// Active positions: normalized callsign -> { messageId, controllers: Map(actualCallsign -> {controller, logonTime}) }
+const activePositions = new Map();
 
 /**
  * Load state from file
@@ -185,9 +186,15 @@ function loadState() {
     if (fs.existsSync(STATE_FILE)) {
       const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
       for (const [key, value] of Object.entries(data)) {
-        activeControllers.set(key, value);
+        // Convert controllers object back to Map
+        const controllersMap = new Map(Object.entries(value.controllers || {}));
+        activePositions.set(key, {
+          messageId: value.messageId,
+          controllers: controllersMap,
+          positionLogonTime: value.positionLogonTime
+        });
       }
-      console.log(`📁 Loaded ${activeControllers.size} active controller(s) from state file`);
+      console.log(`📁 Loaded ${activePositions.size} active position(s) from state file`);
     }
   } catch (err) {
     console.warn('Could not load VATSIM state:', err.message);
@@ -203,7 +210,17 @@ function saveState() {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    const data = Object.fromEntries(activeControllers);
+    
+    // Convert Map to plain object for JSON
+    const data = {};
+    for (const [key, value] of activePositions) {
+      data[key] = {
+        messageId: value.messageId,
+        controllers: Object.fromEntries(value.controllers),
+        positionLogonTime: value.positionLogonTime
+      };
+    }
+    
     fs.writeFileSync(STATE_FILE, JSON.stringify(data, null, 2));
   } catch (err) {
     console.error('Could not save VATSIM state:', err.message);
@@ -243,31 +260,54 @@ function formatDuration(startTime) {
 }
 
 /**
- * Create logon embed
+ * Check if controller is in observer mode
  */
-function createLogonEmbed(controller) {
-  const positionName = getPositionName(controller.callsign);
-  const userName = controller.name || 'Unknown';
-  
-  return new EmbedBuilder()
-    .setTitle(`[${controller.callsign}] ${positionName} is now online.`)
-    .setDescription(`${userName} started controlling ${positionName}.`)
-    .setColor('#29b473')
-    .setTimestamp();
+function isObserver(controller) {
+  return controller.frequency === OBSERVER_FREQUENCY;
 }
 
 /**
- * Create logoff embed
+ * Create or update embed for a position
  */
-function createLogoffEmbed(controller, startTime) {
-  const positionName = getPositionName(controller.callsign);
-  const userName = controller.name || 'Unknown';
-  const duration = formatDuration(startTime);
+function createPositionEmbed(normalizedCallsign, positionData) {
+  const positionName = getPositionName(normalizedCallsign);
+  const controllers = Array.from(positionData.controllers.values());
+  
+  // Separate online and offline controllers
+  const onlineControllers = controllers.filter(c => !c.logoffTime);
+  const offlineControllers = controllers.filter(c => c.logoffTime);
+  
+  const isOnline = onlineControllers.length > 0;
+  const title = `[${normalizedCallsign}] ${positionName} is now ${isOnline ? 'online' : 'offline'}.`;
+  const color = isOnline ? '#29b473' : '#e53935';
+  
+  let description = '';
+  
+  // Add online controllers
+  for (const ctrlData of onlineControllers) {
+    const userName = ctrlData.controller.name || 'Unknown';
+    const actualCallsign = ctrlData.controller.callsign;
+    description += `${userName} started controlling ${positionName} (${actualCallsign}).\n`;
+  }
+  
+  // Add offline controllers
+  for (const ctrlData of offlineControllers) {
+    const userName = ctrlData.controller.name || 'Unknown';
+    const actualCallsign = ctrlData.controller.callsign;
+    const duration = formatDuration(ctrlData.logonTime);
+    description += `${userName} stopped controlling ${positionName} (${actualCallsign}). Session Duration: ${duration}\n`;
+  }
+  
+  // Add total session duration if all controllers are offline
+  if (!isOnline && positionData.positionLogonTime) {
+    const totalDuration = formatDuration(positionData.positionLogonTime);
+    description += `\n**Total Session Duration:** ${totalDuration}`;
+  }
   
   return new EmbedBuilder()
-    .setTitle(`[${controller.callsign}] ${positionName} is now offline.`)
-    .setDescription(`${userName} stopped controlling ${positionName}.\n\n**Session Duration:** ${duration}`)
-    .setColor('#e53935')
+    .setTitle(title)
+    .setDescription(description.trim())
+    .setColor(color)
     .setTimestamp();
 }
 
@@ -292,50 +332,107 @@ async function checkControllers(client) {
     
     // Get tracked positions from our mapping
     const trackedPositions = Object.keys(POSITION_NAMES);
-    const currentControllers = new Map();
+    const currentOnlinePositions = new Map(); // normalized -> [controllers]
     
-    // Find controllers on tracked positions
+    // Find controllers on tracked positions (excluding observers)
     for (const controller of data.controllers) {
+      if (isObserver(controller)) continue;
+      
       const normalized = normalizeCallsign(controller.callsign);
       
       if (trackedPositions.includes(normalized)) {
-        currentControllers.set(normalized, controller);
+        if (!currentOnlinePositions.has(normalized)) {
+          currentOnlinePositions.set(normalized, []);
+        }
+        currentOnlinePositions.get(normalized).push(controller);
       }
     }
     
-    // Check for new logons
-    for (const [callsign, controller] of currentControllers) {
-      if (!activeControllers.has(callsign)) {
-        // New controller logged on
-        const embed = createLogonEmbed(controller);
-        const message = await channel.send({ embeds: [embed] });
-        
-        activeControllers.set(callsign, {
-          controller,
-          messageId: message.id,
-          logonTime: controller.logon_time,
-        });
-        
-        saveState();
-        console.log(`✈️ ${controller.name} logged on to ${callsign}`);
+    // Check for new logons or position updates
+    for (const [normalizedCallsign, controllers] of currentOnlinePositions) {
+      let positionData = activePositions.get(normalizedCallsign);
+      
+      if (!positionData) {
+        // New position coming online
+        positionData = {
+          messageId: null,
+          controllers: new Map(),
+          positionLogonTime: new Date().toISOString()
+        };
+        activePositions.set(normalizedCallsign, positionData);
       }
+      
+      // Check each controller on this position
+      for (const controller of controllers) {
+        const actualCallsign = controller.callsign;
+        
+        if (!positionData.controllers.has(actualCallsign)) {
+          // New controller on this position
+          positionData.controllers.set(actualCallsign, {
+            controller: controller,
+            logonTime: controller.logon_time,
+            logoffTime: null
+          });
+          
+          console.log(`✈️ ${controller.name} logged on to ${actualCallsign} (${normalizedCallsign})`);
+        }
+      }
+      
+      // Update or create message
+      const embed = createPositionEmbed(normalizedCallsign, positionData);
+      
+      if (positionData.messageId) {
+        // Update existing message
+        try {
+          const message = await channel.messages.fetch(positionData.messageId);
+          await message.edit({ embeds: [embed] });
+        } catch (err) {
+          // Message was deleted, create new one
+          const message = await channel.send({ embeds: [embed] });
+          positionData.messageId = message.id;
+        }
+      } else {
+        // Create new message
+        const message = await channel.send({ embeds: [embed] });
+        positionData.messageId = message.id;
+      }
+      
+      saveState();
     }
     
     // Check for logoffs
-    for (const [callsign, data] of activeControllers) {
-      if (!currentControllers.has(callsign)) {
-        // Controller logged off
+    for (const [normalizedCallsign, positionData] of activePositions) {
+      const currentControllers = currentOnlinePositions.get(normalizedCallsign) || [];
+      const currentCallsigns = new Set(currentControllers.map(c => c.callsign));
+      
+      let hasChanges = false;
+      
+      // Mark controllers as logged off if they're not in current data
+      for (const [actualCallsign, ctrlData] of positionData.controllers) {
+        if (!currentCallsigns.has(actualCallsign) && !ctrlData.logoffTime) {
+          ctrlData.logoffTime = new Date().toISOString();
+          hasChanges = true;
+          console.log(`✈️ ${ctrlData.controller.name} logged off from ${actualCallsign} (${normalizedCallsign})`);
+        }
+      }
+      
+      if (hasChanges) {
+        // Update the message
+        const embed = createPositionEmbed(normalizedCallsign, positionData);
+        
         try {
-          const message = await channel.messages.fetch(data.messageId);
-          const embed = createLogoffEmbed(data.controller, data.logonTime);
+          const message = await channel.messages.fetch(positionData.messageId);
           await message.edit({ embeds: [embed] });
-          
-          console.log(`✈️ ${data.controller.name} logged off from ${callsign}`);
         } catch (err) {
           console.error('Failed to update logoff message:', err.message);
         }
         
-        activeControllers.delete(callsign);
+        // If all controllers are offline, remove from active positions after updating
+        const allOffline = Array.from(positionData.controllers.values()).every(c => c.logoffTime);
+        if (allOffline) {
+          activePositions.delete(normalizedCallsign);
+        }
+        
         saveState();
       }
     }
