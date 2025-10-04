@@ -298,8 +298,10 @@ function createPositionEmbed(normalizedCallsign, positionData) {
     description += `${userName} stopped controlling ${positionName} (${actualCallsign}). Session Duration: ${duration}\n`;
   }
   
-  // Add total session duration if all controllers are offline
-  if (!isOnline && positionData.positionLogonTime) {
+  // Only add total session duration if:
+  // 1. All controllers are offline AND
+  // 2. There were multiple controllers (more than 1)
+  if (!isOnline && positionData.positionLogonTime && controllers.length > 1) {
     const totalDuration = formatDuration(positionData.positionLogonTime);
     description += `\n**Total Session Duration:** ${totalDuration}`;
   }
