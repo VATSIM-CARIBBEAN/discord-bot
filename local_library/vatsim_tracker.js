@@ -351,6 +351,7 @@ async function checkControllers(client) {
     // Check for new logons or position updates
     for (const [normalizedCallsign, controllers] of currentOnlinePositions) {
       let positionData = activePositions.get(normalizedCallsign);
+      let hasNewControllers = false;
       
       if (!positionData) {
         // New position coming online
@@ -360,6 +361,7 @@ async function checkControllers(client) {
           positionLogonTime: new Date().toISOString()
         };
         activePositions.set(normalizedCallsign, positionData);
+        hasNewControllers = true;
       }
       
       // Check each controller on this position
@@ -374,30 +376,33 @@ async function checkControllers(client) {
             logoffTime: null
           });
           
+          hasNewControllers = true;
           console.log(`✈️ ${controller.name} logged on to ${actualCallsign} (${normalizedCallsign})`);
         }
       }
       
-      // Update or create message
-      const embed = createPositionEmbed(normalizedCallsign, positionData);
-      
-      if (positionData.messageId) {
-        // Update existing message
-        try {
-          const message = await channel.messages.fetch(positionData.messageId);
-          await message.edit({ embeds: [embed] });
-        } catch (err) {
-          // Message was deleted, create new one
+      // Update or create message (always update if there are changes)
+      if (hasNewControllers) {
+        const embed = createPositionEmbed(normalizedCallsign, positionData);
+        
+        if (positionData.messageId) {
+          // Update existing message
+          try {
+            const message = await channel.messages.fetch(positionData.messageId);
+            await message.edit({ embeds: [embed] });
+          } catch (err) {
+            // Message was deleted, create new one
+            const message = await channel.send({ embeds: [embed] });
+            positionData.messageId = message.id;
+          }
+        } else {
+          // Create new message
           const message = await channel.send({ embeds: [embed] });
           positionData.messageId = message.id;
         }
-      } else {
-        // Create new message
-        const message = await channel.send({ embeds: [embed] });
-        positionData.messageId = message.id;
+        
+        saveState();
       }
-      
-      saveState();
     }
     
     // Check for logoffs
