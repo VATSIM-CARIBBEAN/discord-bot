@@ -100,7 +100,7 @@ async function handleTriviaStart(interaction) {
     .addFields({ name: '⏱️ Time Remaining', value: '60 seconds', inline: false });
 
   await interaction.reply({
-    content: '@everyone A new trivia question has been posted!',
+    content: 'A new trivia question has been posted!',
     embeds: [questionEmbed, responsesEmbed],
   });
 
