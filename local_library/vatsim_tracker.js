@@ -11,6 +11,9 @@ const STATE_FILE = path.join(__dirname, '../data/vatsim_state.json');
 
 // Position name mapping
 const POSITION_NAMES = {
+  // Caribbean
+  'CARI_FSS': 'Caribbean Control',
+
   // Curacao
   'ANT_CTR': 'Antilles Center',
   'TNCF_CTR': 'Curacao Control',
@@ -132,28 +135,28 @@ const POSITION_NAMES = {
   'TTZO_FSS': 'Trinidad Flight Service',
   'TTZP_CTR': 'Piarco Center',
   'TTPP_APP': 'Piarco Approach',
-  'TGPY_APP': 'Grenada Approach',
-  'TVSA_APP': 'St. Vincent Approach',
-  'TBPB_APP': 'Barbados Approach',
-  'TFFR_APP': 'Guadeloupe Approach',
+  'TGPY_APP': 'Maurice Bishop Approach',
+  'TVSA_APP': 'Argyle Approach',
+  'TBPB_APP': 'Adams Approach',
+  'TFFR_APP': 'Raizet Approach',
   'TFFF_APP': 'Martinique Approach',
   'TLPL_APP': 'St. Lucia Approach',
-  'TAPA_APP': 'Antigua Approach',
-  'TKPK_APP': 'St. Kitts Approach',
+  'TAPA_APP': 'VC Bird Approach',
+  'TKPK_APP': 'Bradshaw Approach',
   'TTPP_TWR': 'Piarco Tower',
   'TTPP_GND': 'Piarco Ground',
   'TTCP_TWR': 'Tobago Tower',
   'TTCP_GND': 'Tobago Ground',
-  'TGPY_TWR': 'Grenada Tower',
-  'TGPY_GND': 'Grenada Ground',
-  'TVSA_TWR': 'St. Vincent Tower',
-  'TVSA_GND': 'St. Vincent Ground',
+  'TGPY_TWR': 'Maurice Bishop Tower',
+  'TGPY_GND': 'Maurice Bishop Ground',
+  'TVSA_TWR': 'Argyle Tower',
+  'TVSA_GND': 'Argyle Ground',
   'TVSC_TWR': 'Canouan Tower',
   'TVSC_GND': 'Canouan Ground',
-  'TBPB_TWR': 'Barbados Tower',
-  'TBPB_GND': 'Barbados Ground',
-  'TFFR_TWR': 'Guadeloupe Tower',
-  'TFFR_GND': 'Guadeloupe Ground',
+  'TBPB_TWR': 'Adams Tower',
+  'TBPB_GND': 'Adams Ground',
+  'TFFR_TWR': 'Raizet Tower',
+  'TFFR_GND': 'Raizet Ground',
   'TDPD_TWR': 'Dominica Tower',
   'TDPD_GND': 'Dominica Ground',
   'TFFF_TWR': 'Martinique Tower',
@@ -162,12 +165,13 @@ const POSITION_NAMES = {
   'TLPL_GND': 'St. Lucia Ground',
   'TLPC_TWR': 'Castries Tower',
   'TLPC_GND': 'Castries Ground',
-  'TAPA_TWR': 'Antigua Tower',
-  'TAPA_GND': 'Antigua Ground',
-  'TKPK_TWR': 'St. Kitts Tower',
-  'TKPK_GND': 'St. Kitts Ground',
+  'TAPA_TWR': 'VC Bird Tower',
+  'TAPA_GND': 'VC Bird Ground',
+  'TKPK_TWR': 'Bradshaw Tower',
+  'TKPK_GND': 'Bradshaw Ground',
   'TKPN_TWR': 'Nevis Tower',
   'TKPN_GND': 'Nevis Ground',
+  'TTZO_FSS': 'Piarco Oceanic'
 };
 
 // In-memory storage for active controllers
@@ -246,7 +250,7 @@ function createLogonEmbed(controller) {
   const userName = controller.name || 'Unknown';
   
   return new EmbedBuilder()
-    .setTitle(`${positionName} is now online.`)
+    .setTitle(`[${controller.callsign}] ${positionName} is now online.`)
     .setDescription(`${userName} started controlling ${positionName}.`)
     .setColor('#29b473')
     .setTimestamp();
@@ -261,7 +265,7 @@ function createLogoffEmbed(controller, startTime) {
   const duration = formatDuration(startTime);
   
   return new EmbedBuilder()
-    .setTitle(`${positionName} is now offline.`)
+    .setTitle(`[${controller.callsign}] ${positionName} is now offline.`)
     .setDescription(`${userName} stopped controlling ${positionName}.\n\n**Session Duration:** ${duration}`)
     .setColor('#e53935')
     .setTimestamp();
