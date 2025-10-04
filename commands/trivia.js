@@ -82,11 +82,11 @@ async function handleTriviaStart(interaction) {
     .setDescription(question.question)
     .setColor('#003466')
     .addFields(
-      { name: '🅰️ Option A', value: question.options.A, inline: true },
-      { name: '🅱️ Option B', value: question.options.B, inline: true },
+      { name: 'Option A', value: question.options.A, inline: true },
+      { name: 'Option B', value: question.options.B, inline: true },
       { name: '\u200B', value: '\u200B', inline: true },
-      { name: '🅲 Option C', value: question.options.C, inline: true },
-      { name: '🅳 Option D', value: question.options.D, inline: true },
+      { name: 'Option C', value: question.options.C, inline: true },
+      { name: 'Option D', value: question.options.D, inline: true },
       { name: '\u200B', value: '\u200B', inline: true }
     )
     .setFooter({ text: 'Reply A, B, C, or D in chat to answer! • First correct: +10pts • Others: +5pts' })
