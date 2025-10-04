@@ -89,7 +89,7 @@ async function handleTriviaStart(interaction) {
       { name: '🅳 Option D', value: question.options.D, inline: true },
       { name: '\u200B', value: '\u200B', inline: true }
     )
-    .setFooter({ text: 'Type A, B, C, or D in chat to answer! • First correct: +10pts • Others: +5pts' })
+    .setFooter({ text: 'Reply A, B, C, or D in chat to answer! • First correct: +10pts • Others: +5pts' })
     .setTimestamp();
 
   // Create the responses tracker embed
