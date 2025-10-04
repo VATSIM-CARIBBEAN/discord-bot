@@ -367,9 +367,10 @@ async function checkControllers(client) {
       // Check each controller on this position
       for (const controller of controllers) {
         const actualCallsign = controller.callsign;
+        const existingController = positionData.controllers.get(actualCallsign);
         
-        if (!positionData.controllers.has(actualCallsign)) {
-          // New controller on this position
+        if (!existingController || existingController.logoffTime) {
+          // New controller on this position OR controller logging back on after logging off
           positionData.controllers.set(actualCallsign, {
             controller: controller,
             logonTime: controller.logon_time,
