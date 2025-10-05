@@ -228,10 +228,11 @@ function saveState() {
 }
 
 /**
- * Normalize callsign by removing _I_ or _2_ etc
+ * Normalize callsign by removing _I_, _A_, _2_, etc.
+ * Matches patterns like _X_ where X is any letter or digit
  */
 function normalizeCallsign(callsign) {
-  return callsign.replace(/_[I0-9]_/g, '_');
+  return callsign.replace(/_[A-Z0-9]_/g, '_');
 }
 
 /**
