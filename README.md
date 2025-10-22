@@ -1,4 +1,4 @@
-![License](https://img.shields.io/github/license/VATSIM-CARIBBEAN/Discord-Bot)
+![License](https://img.shields.io/github/license/VATSIM-CARIBBEAN/discord-bot)
 ![Node.js Version](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
 ![Discord.js Version](https://img.shields.io/badge/discord.js-v14-blue)
 
