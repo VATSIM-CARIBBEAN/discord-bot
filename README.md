@@ -33,31 +33,32 @@ A Discord bot for administrative tasks in the VATSIM Caribbean Division's Discor
 
 3. **Create the `.env` file** in the project root with your credentials:
 
-    ```env
-    CLIENT_ID=your_discord_application_client_id
-    BOT_TOKEN=your_discord_bot_token
-    GUILD_ID=your_guild_id
-    FORUM_CHANNEL_ID=your_workflow_forum_channel_id
+    Copy the `.env.example` file to `.env` and fill in your credentials:
 
-    VATCAR_DIVISION_KEY=your_internal_division_key
-
-    DB_HOST=your_mysql_host
-    DB_PORT=3306
-    DB_DATABASE=your_mysql_database
-    DB_USER=your_mysql_username
-    DB_PASSWORD=your_mysql_password
-
-    BETTERSTACK_HEARTBEAT_URL=your_heartbeat_url_optional
-    BETTERSTACK_HEARTBEAT_INTERVAL_MS=60000
+    ```bash
+    cp .env.example .env
     ```
 
-4. **Deploy slash commands**
+    Then edit the `.env` file with your actual values.
+
+4. **Configure instance-specific values** (optional but recommended)
+
+    Some values are hardcoded in the source files and should be updated for your organization:
+
+    - **[local_library/vatsim_tracker.js:8](local_library/vatsim_tracker.js#L8)**: `CHANNEL_ID` - Discord channel ID for controller tracking notifications
+    - **[commands/workflow/board.js:5-6](commands/workflow/board.js#L5-L6)**: `WORKFLOW_BOARD_THREAD_ID` and `WORKFLOW_BOARD_MESSAGE_ID` - Thread and message IDs for the workflow board
+    - **[commands/workflow/_shared.js:67](commands/workflow/_shared.js#L67)**: `EXECUTIVE_ROLE_ID` - Discord role ID for executive team
+    - **[commands/workflow/_shared.js:205](commands/workflow/_shared.js#L205)**: `LEADERSHIP_ROLE_IDS` - Set of Discord role IDs for leadership team
+    - **[commands/embed.js:87](commands/embed.js#L87)**: Footer text in embed command (set to your organization name)
+    - **[commands/workflow/_shared.js:250](commands/workflow/_shared.js#L250)**: Integration URL (update to your organization's URL)
+
+5. **Deploy slash commands**
 
     ```bash
     node deploy-commands.js
     ```
 
-5. **Start the bot**
+6. **Start the bot**
 
     ```bash
     node index.js
