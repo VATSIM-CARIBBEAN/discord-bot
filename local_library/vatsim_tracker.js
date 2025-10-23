@@ -232,7 +232,7 @@ function saveState() {
  * Matches patterns like _X_ where X is one or more letters/digits
  */
 function normalizeCallsign(callsign) {
-  return callsign.replace(/_[A-Z0-9]+_/g, '_');
+  return callsign.replace(/_[A-Z0-9]*_/g, '_');
 }
 
 /**
