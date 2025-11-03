@@ -112,16 +112,52 @@ client.once(Events.ClientReady, async (bot) => {
     console.log('[ML] Initializing ML system...');
 
     try {
-      // Initialize database schema
+      // Initialize database schema (critical - must succeed)
       await initializeMLSchema();
+      console.log('[ML] Database schema initialized');
 
-      // Initialize ML modules
-      initializeCollector();
-      initializeLearning();
-      initializePrediction();
-      initializeReporter();
-      initializeNotifier(client);
-      initializeValidator();
+      // Initialize ML modules (wrap each to continue on partial failure)
+      try {
+        initializeCollector();
+        console.log('[ML] Data collector initialized');
+      } catch (err) {
+        console.error('[ERROR] Data collector initialization failed:', err.message);
+      }
+
+      try {
+        initializeLearning();
+        console.log('[ML] Learning engine initialized');
+      } catch (err) {
+        console.error('[ERROR] Learning engine initialization failed:', err.message);
+      }
+
+      try {
+        initializePrediction();
+        console.log('[ML] Prediction engine initialized');
+      } catch (err) {
+        console.error('[ERROR] Prediction engine initialization failed:', err.message);
+      }
+
+      try {
+        initializeReporter();
+        console.log('[ML] Debug reporter initialized');
+      } catch (err) {
+        console.error('[ERROR] Debug reporter initialization failed:', err.message);
+      }
+
+      try {
+        initializeNotifier(client);
+        console.log('[ML] Notifier initialized');
+      } catch (err) {
+        console.error('[ERROR] Notifier initialization failed:', err.message);
+      }
+
+      try {
+        initializeValidator();
+        console.log('[ML] Validator initialized');
+      } catch (err) {
+        console.error('[ERROR] Validator initialization failed:', err.message);
+      }
 
       // Schedule daily learning analysis at midnight UTC
       schedule.scheduleJob('0 0 * * *', async () => {
@@ -169,17 +205,23 @@ client.once(Events.ClientReady, async (bot) => {
 
       console.log('[SUCCESS] ML system initialized and scheduled');
 
-      // Send startup notification
-      const { sendCustomNotification } = require('./local_library/ml/debug_reporter');
-      await sendCustomNotification(
-        client,
-        'ML System Started',
-        `The ML prediction system has been initialized and is now collecting data.\n\nScheduled jobs:\n• Daily analysis: Midnight UTC\n• Predictions: 6 AM UTC\n• Evaluation: 7 AM UTC\n• Debug report: 8 AM UTC\n• Event sync: Weekly (Sunday midnight UTC)\n• Hourly notifications: Every hour\n• Validation checks: Every 15 minutes`,
-        '#29b473'
-      );
+      // Send startup notification (optional - don't fail if this errors)
+      try {
+        const { sendCustomNotification } = require('./local_library/ml/debug_reporter');
+        await sendCustomNotification(
+          client,
+          'ML System Started',
+          `The ML prediction system has been initialized and is now collecting data.\n\nScheduled jobs:\n• Daily analysis: Midnight UTC\n• Predictions: 6 AM UTC\n• Evaluation: 7 AM UTC\n• Debug report: 8 AM UTC\n• Event sync: Weekly (Sunday midnight UTC)\n• Hourly notifications: Every hour\n• Validation checks: Every 15 minutes`,
+          '#29b473'
+        );
+      } catch (notifyErr) {
+        console.warn('[WARNING] Could not send ML startup notification:', notifyErr.message);
+      }
 
     } catch (err) {
       console.error('[ERROR] ML system initialization failed:', err);
+      console.error('[INFO] Bot will continue running without ML features');
+      // Bot continues to work - ML is optional
     }
   } else {
     console.log('[INFO] ML system is disabled (ML_ENABLED=false)');

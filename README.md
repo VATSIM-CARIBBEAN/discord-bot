@@ -139,3 +139,24 @@ npm ci
 node deploy-commands.js  # Only needed if slash commands changed
 pm2 restart discord-bot  # If using process manager
 ```
+
+## Database Migration
+
+When deploying the ML system for the first time, the database schema will be automatically initialized on bot startup. The `initializeMLSchema()` function creates all required tables if they don't exist.
+
+**Manual Migration (if needed):**
+If you need to manually initialize or verify the ML database schema:
+```bash
+node -e "require('dotenv').config(); const { initializeMLSchema } = require('./local_library/ml/schema'); initializeMLSchema().then(() => process.exit(0));"
+```
+
+**Rollback Strategy:**
+If you need to disable the ML system:
+1. Set `ML_ENABLED=false` in `.env`
+2. Restart the bot
+3. The ML tables remain in the database but are unused
+4. To fully remove: Drop the `ML_DATABASE` in MySQL
+
+## License
+
+MIT License
