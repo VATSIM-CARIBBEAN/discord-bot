@@ -3,6 +3,16 @@ require('dotenv').config();
 const { startHeartbeat } = require('./local_library/heartbeat');
 const { startTracker } = require('./local_library/vatsim_tracker');
 
+// ML System
+const { initializeMLSchema } = require('./local_library/ml/schema');
+const { initializeCollector } = require('./local_library/ml/data_collector');
+const { initializeLearning, runDailyAnalysis, analyzeControllerPatterns } = require('./local_library/ml/learning_engine');
+const { initializePrediction, generatePredictions, evaluatePredictions } = require('./local_library/ml/prediction_engine');
+const { initializeReporter, sendDailyReport } = require('./local_library/ml/debug_reporter');
+const { initializeNotifier } = require('./local_library/ml/notifier');
+const { initializeValidator } = require('./local_library/ml/validator');
+const schedule = require('node-schedule');
+
 const {
   Client,
   GatewayIntentBits,
@@ -11,6 +21,7 @@ const {
   ChannelType,
   EmbedBuilder,
   Collection,
+  MessageFlags,
 } = require('discord.js');
 
 const fs = require('fs');
@@ -60,7 +71,7 @@ function loadCommands(dir) {
           client.commands.set(command.data.name, command);
         }
       } catch (err) {
-        console.warn(`⚠️  Could not load command ${filePath}:`, err.message);
+        console.warn(`[WARNING]  Could not load command ${filePath}:`, err.message);
       }
     }
   }
@@ -79,10 +90,10 @@ function extractMentions(text) {
   return [...new Set(mentions)];
 }
 
-client.once('ready', async (bot) => {
-  console.log(`🤖 Logged in as ${bot.user.tag}`);
-  console.log(`🏠 Guild: ${GUILD_ID}`);
-  console.log(`🧵 Forum channel: ${FORUM_CHANNEL_ID}`);
+client.once(Events.ClientReady, async (bot) => {
+  console.log(`[BOT] Logged in as ${bot.user.tag}`);
+  console.log(` Guild: ${GUILD_ID}`);
+  console.log(`[THREAD] Forum channel: ${FORUM_CHANNEL_ID}`);
 
   hbHandle = startHeartbeat(HB_URL, HB_INTERVAL);
   console.log('Better Stack heartbeat started.');
@@ -94,6 +105,84 @@ client.once('ready', async (bot) => {
     console.log('🗂 Workflow board refreshed and stale entries removed.');
   } catch (e) {
     console.warn('Board refresh on ready failed:', e.message);
+  }
+
+  // Initialize ML system if enabled
+  if (process.env.ML_ENABLED === 'true') {
+    console.log('[ML] Initializing ML system...');
+
+    try {
+      // Initialize database schema
+      await initializeMLSchema();
+
+      // Initialize ML modules
+      initializeCollector();
+      initializeLearning();
+      initializePrediction();
+      initializeReporter();
+      initializeNotifier(client);
+      initializeValidator();
+
+      // Schedule daily learning analysis at midnight UTC
+      schedule.scheduleJob('0 0 * * *', async () => {
+        console.log('[ML] Running scheduled daily analysis...');
+        await runDailyAnalysis();
+        await analyzeControllerPatterns();
+      });
+
+      // Schedule prediction generation at 6 AM UTC
+      schedule.scheduleJob('0 6 * * *', async () => {
+        console.log('[ML] Generating daily predictions...');
+        await generatePredictions();
+      });
+
+      // Schedule prediction evaluation at 7 AM UTC
+      schedule.scheduleJob('0 7 * * *', async () => {
+        console.log('[ML] Evaluating predictions...');
+        await evaluatePredictions();
+      });
+
+      // Schedule daily debug report at 8 AM UTC
+      schedule.scheduleJob('0 8 * * *', async () => {
+        console.log('[ML] Sending daily debug report...');
+        await sendDailyReport(client);
+      });
+
+      // Schedule weekly VATSIM event fetch (Sunday at midnight UTC)
+      schedule.scheduleJob('0 0 * * 0', async () => {
+        console.log(' Fetching VATSIM events...');
+        const { fetchEvents, storeEvents, cleanupOldEvents } = require('./scripts/fetch_vatsim_events');
+        const { createMLPool } = require('./local_library/ml/schema');
+
+        const mlPool = createMLPool();
+        try {
+          const events = await fetchEvents();
+          const { insertedCount, updatedCount } = await storeEvents(events, mlPool);
+          await cleanupOldEvents(mlPool);
+          console.log(`[SUCCESS] Event sync complete: ${insertedCount} new, ${updatedCount} updated`);
+        } catch (err) {
+          console.error('[ERROR] Event fetch failed:', err.message);
+        } finally {
+          await mlPool.end();
+        }
+      });
+
+      console.log('[SUCCESS] ML system initialized and scheduled');
+
+      // Send startup notification
+      const { sendCustomNotification } = require('./local_library/ml/debug_reporter');
+      await sendCustomNotification(
+        client,
+        'ML System Started',
+        `The ML prediction system has been initialized and is now collecting data.\n\nScheduled jobs:\n• Daily analysis: Midnight UTC\n• Predictions: 6 AM UTC\n• Evaluation: 7 AM UTC\n• Debug report: 8 AM UTC\n• Event sync: Weekly (Sunday midnight UTC)\n• Hourly notifications: Every hour\n• Validation checks: Every 15 minutes`,
+        '#29b473'
+      );
+
+    } catch (err) {
+      console.error('[ERROR] ML system initialization failed:', err);
+    }
+  } else {
+    console.log('[INFO] ML system is disabled (ML_ENABLED=false)');
   }
 });
 
@@ -145,7 +234,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (!command) {
         return interaction.reply({
           content: 'Unknown command.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
       try {
@@ -154,7 +243,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         console.error('Command execution error:', err);
         const reply = {
           content: 'There was an error executing this command.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         };
         if (interaction.deferred || interaction.replied) {
           await interaction.followUp(reply).catch(() => {});
@@ -179,14 +268,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
       try {
         await interaction.followUp({
           content: 'Something went wrong.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       } catch {}
     } else {
       try {
         await interaction.reply({
           content: 'Something went wrong.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       } catch {}
     }
@@ -198,7 +287,7 @@ client.on(Events.ThreadDelete, async (thread) => {
     if (thread?.guildId !== GUILD_ID) return;
     await deleteWorkflowByThread(thread.id).catch(() => {});
     await refreshBoard(client).catch(() => {});
-    console.log(`🗑️ Thread ${thread.id} deleted → row removed from DB`);
+    console.log(`[DELETE] Thread ${thread.id} deleted → row removed from DB`);
   } catch (err) {
     console.error('Error handling ThreadDelete:', err);
   }
@@ -211,7 +300,7 @@ client.on(Events.ChannelDelete, async (channel) => {
       await deleteWorkflowByThread(channel.id).catch(() => {});
       await refreshBoard(client).catch(() => {});
       console.log(
-        `🗑️ (ChannelDelete) Thread ${channel.id} deleted → row removed from DB`
+        `[DELETE] (ChannelDelete) Thread ${channel.id} deleted → row removed from DB`
       );
     }
   } catch (err) {

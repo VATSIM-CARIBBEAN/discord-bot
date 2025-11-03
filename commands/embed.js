@@ -1,5 +1,5 @@
 // commands/embed.js
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ChannelType, MessageFlags } = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -68,7 +68,7 @@ module.exports = {
     if (!title && !description) {
       return interaction.reply({
         content: 'You must provide at least a title or description.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -93,7 +93,7 @@ module.exports = {
       } catch {
         return interaction.reply({
           content: 'Invalid image URL.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
     }
@@ -104,7 +104,7 @@ module.exports = {
       } catch {
         return interaction.reply({
           content: 'Invalid URL format.',
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         });
       }
     }
@@ -119,13 +119,13 @@ module.exports = {
       await channel.send(messagePayload);
       await interaction.reply({
         content: `✅ Embed sent successfully to ${channel}`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     } catch (err) {
       console.error('Error sending embed:', err);
       await interaction.reply({
         content: 'Failed to send embed. Check bot permissions in that channel.',
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   },

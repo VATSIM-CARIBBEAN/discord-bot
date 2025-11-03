@@ -3,6 +3,7 @@ const axios = require('axios');
 const { EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const { recordSession } = require('./ml/data_collector');
 
 const VATSIM_DATA_URL = 'https://data.vatsim.net/v3/vatsim-data.json';
 const CHANNEL_ID = '1423619321267093504';
@@ -54,8 +55,8 @@ const POSITION_NAMES = {
   
   // Kingston
   'MKJK_CTR': 'Kingston Radar',
-  'MKJP_APP': 'Manley Approach',
-  'MKJS_APP': 'Sangster Approach',
+  'MKJP_APP': 'Manley Radar',
+  'MKJS_APP': 'Sangster Radar',
   'MWCR_APP': 'Cayman Approach',
   'MKJP_TWR': 'Manley Tower',
   'MKJP_GND': 'Manley Ground',
@@ -70,13 +71,14 @@ const POSITION_NAMES = {
   'ZMO_CTR':  'Miami Center',
   'MYNN_APP': 'Nassau Approach',
   'MYGF_APP': 'Freeport Approach',
-  'MBPV_APP': 'Providenciales Approach',
+  'MBPV_APP': 'Provo Approach',
   'MYNN_TWR': 'Nassau Tower',
   'MYNN_GND': 'Nassau Ground',
   'MYGF_TWR': 'Freeport Tower',
   'MYGF_GND': 'Freeport Ground',
-  'MBPV_TWR': 'Providenciales Tower',
-  'MBPV_GND': 'Providenciales Ground',
+  'MBPV_TWR': 'Provo Tower',
+  'MBPV_GND': 'Provo Ground',
+  'MBPV_DEL': 'Provo Delivery',
   'MBGT_TWR': 'Grand Turk Tower',
   'MBGT_GND': 'Grand Turk Ground',
   
@@ -94,6 +96,7 @@ const POSITION_NAMES = {
   'TNCM_APP': 'Juliana Approach',
   'SJU_TWR': 'San Juan Tower',
   'SJU_GND': 'San Juan Ground',
+  'SJU_DEL': 'San Juan Delivery',
   'TJIG_TWR': 'Isla Grande Tower',
   'TJIG_GND': 'Isla Grande Ground',
   'TJBQ_TWR': 'Aguadilla Tower',
@@ -245,15 +248,17 @@ function getPositionName(callsign) {
 
 /**
  * Format duration in hours and minutes
+ * @param {string} startTime - ISO timestamp of start
+ * @param {string} endTime - ISO timestamp of end (optional, defaults to now)
  */
-function formatDuration(startTime) {
+function formatDuration(startTime, endTime = null) {
   const start = new Date(startTime);
-  const end = new Date();
+  const end = endTime ? new Date(endTime) : new Date();
   const diffMs = end - start;
   const diffMins = Math.floor(diffMs / 60000);
   const hours = Math.floor(diffMins / 60);
   const minutes = diffMins % 60;
-  
+
   if (hours > 0) {
     return `${hours}h ${minutes}m`;
   }
@@ -295,7 +300,7 @@ function createPositionEmbed(normalizedCallsign, positionData) {
   for (const ctrlData of offlineControllers) {
     const userName = ctrlData.controller.name || 'Unknown';
     const actualCallsign = ctrlData.controller.callsign;
-    const duration = formatDuration(ctrlData.logonTime);
+    const duration = formatDuration(ctrlData.logonTime, ctrlData.logoffTime);
     description += `${userName} stopped controlling ${positionName} (${actualCallsign}). Session Duration: ${duration}\n`;
   }
   
@@ -371,15 +376,42 @@ async function checkControllers(client) {
       for (const controller of controllers) {
         const actualCallsign = controller.callsign;
         const existingController = positionData.controllers.get(actualCallsign);
-        
-        if (!existingController || existingController.logoffTime) {
+
+        // Detect if this is a new controller or a different controller on same callsign
+        // Use CID for comparison (most reliable), fall back to name if CID unavailable
+        const existingId = existingController?.controller.cid || existingController?.controller.name;
+        const currentId = controller.cid || controller.name;
+        const isDifferentController = existingController &&
+                                       !existingController.logoffTime &&
+                                       existingId !== currentId;
+
+        if (isDifferentController) {
+          // Different controller took over the same position - mark previous as logged off
+          existingController.logoffTime = new Date().toISOString();
+          hasNewControllers = true;
+          console.log(`✈️ ${existingController.controller.name} logged off from ${actualCallsign} (handover to ${controller.name})`);
+
+          // Record session for ML analysis
+          if (process.env.ML_ENABLED === 'true') {
+            recordSession({
+              callsign: actualCallsign,
+              normalizedCallsign: normalizedCallsign,
+              controllerName: existingController.controller.name,
+              controllerCid: existingController.controller.cid ? String(existingController.controller.cid) : null,
+              logonTime: existingController.logonTime,
+              logoffTime: existingController.logoffTime,
+            }).catch(err => console.error('ML session recording failed:', err.message));
+          }
+        }
+
+        if (!existingController || existingController.logoffTime || isDifferentController) {
           // New controller on this position OR controller logging back on after logging off
           positionData.controllers.set(actualCallsign, {
             controller: controller,
             logonTime: controller.logon_time,
             logoffTime: null
           });
-          
+
           hasNewControllers = true;
           console.log(`✈️ ${controller.name} logged on to ${actualCallsign} (${normalizedCallsign})`);
         }
@@ -412,16 +444,32 @@ async function checkControllers(client) {
     // Check for logoffs
     for (const [normalizedCallsign, positionData] of activePositions) {
       const currentControllers = currentOnlinePositions.get(normalizedCallsign) || [];
-      const currentCallsigns = new Set(currentControllers.map(c => c.callsign));
-      
+      // Build a set of current controller CIDs on this position
+      const currentControllerCids = new Set(currentControllers.map(c => c.cid));
+
       let hasChanges = false;
-      
+
       // Mark controllers as logged off if they're not in current data
       for (const [actualCallsign, ctrlData] of positionData.controllers) {
-        if (!currentCallsigns.has(actualCallsign) && !ctrlData.logoffTime) {
+        // Check if this specific controller (by CID) is still online
+        const controllerStillOnline = currentControllerCids.has(ctrlData.controller.cid);
+
+        if (!controllerStillOnline && !ctrlData.logoffTime) {
           ctrlData.logoffTime = new Date().toISOString();
           hasChanges = true;
           console.log(`✈️ ${ctrlData.controller.name} logged off from ${actualCallsign} (${normalizedCallsign})`);
+
+          // Record session for ML analysis
+          if (process.env.ML_ENABLED === 'true') {
+            recordSession({
+              callsign: actualCallsign,
+              normalizedCallsign: normalizedCallsign,
+              controllerName: ctrlData.controller.name,
+              controllerCid: ctrlData.controller.cid ? String(ctrlData.controller.cid) : null,
+              logonTime: ctrlData.logonTime,
+              logoffTime: ctrlData.logoffTime,
+            }).catch(err => console.error('ML session recording failed:', err.message));
+          }
         }
       }
       

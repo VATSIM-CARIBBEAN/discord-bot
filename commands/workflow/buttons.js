@@ -22,7 +22,7 @@ const {
 } = require('./_shared');
 
 const { refreshBoard } = require('./board');
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, MessageFlags } = require('discord.js');
 const { codeToName } = require('../../local_library/workflow');
 
 /**
@@ -83,13 +83,13 @@ async function handleContinue(interaction, thread, row, currentCode) {
   if (!allowed) {
     return interaction.reply({
       content: 'You do not have permission to run commands at this step.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
   if (isFinalStatus(currentCode)) {
     return interaction.reply({
       content: 'This workflow is already complete.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -139,7 +139,7 @@ async function handleChange(interaction, thread, row, currentCode) {
   if (!allowed) {
     return interaction.reply({
       content: 'You do not have permission to run commands at this step.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -173,7 +173,7 @@ async function handleVeto(interaction, thread, row) {
   if (!allowed) {
     return interaction.reply({
       content: 'You do not have permission to run commands at this step.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -199,7 +199,7 @@ async function handlePublish(interaction, thread, row) {
   if (!allowed) {
     return interaction.reply({
       content: 'You do not have permission to run commands at this step.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -225,7 +225,7 @@ module.exports = async function handleWorkflowButton(interaction) {
   if (!thread?.isThread?.()) {
     return interaction.reply({
       content: 'Use these buttons inside a workflow thread.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 

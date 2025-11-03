@@ -17,7 +17,7 @@ const DB_PASSWORD = env('DB_PASSWORD', env('MYSQL_PASSWORD', ''));
 
 // Hard-fail fast if something critical is missing
 if (!DB_HOST || !DB_DATABASE || !DB_USER) {
-  console.error('❌ Missing DB config. Required: DB_HOST, DB_DATABASE, DB_USER (and DB_PASSWORD if needed).');
+  console.error('[ERROR] Missing DB config. Required: DB_HOST, DB_DATABASE, DB_USER (and DB_PASSWORD if needed).');
   process.exit(1);
 }
 
@@ -43,7 +43,7 @@ const pool = mysql.createPool({
     await pool.query('SELECT 1');
     console.log(`🔌 MySQL connected: ${DB_HOST}:${DB_PORT}/${DB_DATABASE}`);
   } catch (err) {
-    console.warn('⚠️  Could not verify MySQL connection on startup:', err.message);
+    console.warn('[WARNING]  Could not verify MySQL connection on startup:', err.message);
   }
 })();
 

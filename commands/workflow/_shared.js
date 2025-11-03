@@ -15,6 +15,7 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  MessageFlags,
 } = require('discord.js');
 
 /* ===== Title helpers ===== */
@@ -248,7 +249,7 @@ async function getActorCidOrEphemeral(interaction) {
   if (!cid) {
     await interaction.reply({
       content: 'You must connect your Discord account on **https://vatcar.net/public/my/integrations** to proceed for logging reasons.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     }).catch(() => {});
   }
   return cid;
