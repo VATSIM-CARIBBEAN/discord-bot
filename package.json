@@ -13,7 +13,7 @@
     "node-schedule": "^2.1.1",
     "openai": "^6.0.0",
     "request": "^2.88.2",
-    "request-promise": "^0.0.1",
+    "request-promise": "^0.4.0",
     "simple-statistics": "^7.8.3"
   }
 }
