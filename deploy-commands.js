@@ -22,10 +22,10 @@ function loadCommands(dir) {
         const command = require(filePath);
         if (command.data && command.execute) {
           commands.push(command.data.toJSON());
-          console.log(`✅ Loaded command: ${command.data.name}`);
+          console.log(`[SUCCESS] Loaded command: ${command.data.name}`);
         }
       } catch (err) {
-        console.warn(`⚠️  Skipped ${filePath}:`, err.message);
+        console.warn(`[WARNING]  Skipped ${filePath}:`, err.message);
       }
     }
   }
@@ -44,8 +44,8 @@ const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
       { body: commands },
     );
 
-    console.log(`✅ Successfully reloaded ${data.length} application (/) commands.`);
+    console.log(`[SUCCESS] Successfully reloaded ${data.length} application (/) commands.`);
   } catch (error) {
-    console.error('❌ Error deploying commands:', error);
+    console.error('[ERROR] Error deploying commands:', error);
   }
 })();
