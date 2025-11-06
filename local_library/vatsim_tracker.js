@@ -495,7 +495,8 @@ async function checkControllers(client) {
     }
     
   } catch (err) {
-    console.error('VATSIM tracker error:', err.message);
+    // Silently handle VATSIM API errors (network timeouts, rate limits, etc.)
+    // These are expected and don't affect bot functionality
   }
 }
 
