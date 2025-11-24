@@ -109,6 +109,7 @@ const POSITION_NAMES = {
   'TUPJ_GND': 'Beef Island Ground',
   'TNCM_TWR': 'Juliana Tower',
   'TNCM_GND': 'Juliana Ground',
+  'TNCM_DEL': 'Juliana Delivery',
   'TQPF_TWR': 'CJ Lloyd Tower',
   'TJSJ_TWR': 'San Juan Tower',
   'TJSJ_GND': 'San Juan Ground',
