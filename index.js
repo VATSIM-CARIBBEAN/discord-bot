@@ -18,8 +18,6 @@ const {
   GatewayIntentBits,
   Partials,
   Events,
-  ChannelType,
-  EmbedBuilder,
   Collection,
   MessageFlags,
 } = require('discord.js');
@@ -27,26 +25,13 @@ const {
 const fs = require('fs');
 const path = require('path');
 
-const {
-  ensureWorkflowForThread,
-  deleteWorkflowByThread,
-} = require('./local_library/workflow');
-
-const {
-  decisionRowForStep,
-  buildStep1Intro,
-} = require('./commands/workflow/_shared');
-const handleWorkflowButton = require('./commands/workflow/buttons');
-const { refreshBoard } = require('./commands/workflow/board');
-
 const DISCORD_TOKEN = process.env.BOT_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
-const FORUM_CHANNEL_ID = process.env.FORUM_CHANNEL_ID;
 const HB_URL = process.env.BETTERSTACK_HEARTBEAT_URL;
 const HB_INTERVAL = Number(process.env.BETTERSTACK_HEARTBEAT_INTERVAL_MS || 60000);
 
-if (!DISCORD_TOKEN || !GUILD_ID || !FORUM_CHANNEL_ID) {
-  console.error('Missing one of BOT_TOKEN, GUILD_ID, FORUM_CHANNEL_ID in .env');
+if (!DISCORD_TOKEN || !GUILD_ID) {
+  console.error('Missing one of BOT_TOKEN, GUILD_ID in .env');
   process.exit(1);
 }
 
@@ -81,31 +66,14 @@ loadCommands(path.join(__dirname, 'commands'));
 let hbHandle = null;
 let trackerHandle = null;
 
-/**
- * Extract mentions from embed text so we can ping them outside of embed too
- */
-function extractMentions(text) {
-  const mentionRegex = /<@&?\d+>/g;
-  const mentions = text.match(mentionRegex) || [];
-  return [...new Set(mentions)];
-}
-
 client.once(Events.ClientReady, async (bot) => {
   console.log(`[BOT] Logged in as ${bot.user.tag}`);
   console.log(` Guild: ${GUILD_ID}`);
-  console.log(`[THREAD] Forum channel: ${FORUM_CHANNEL_ID}`);
 
   hbHandle = startHeartbeat(HB_URL, HB_INTERVAL);
   console.log('Better Stack heartbeat started.');
 
   trackerHandle = startTracker(client);
-
-  try {
-    await refreshBoard(client);
-    console.log('🗂 Workflow board refreshed and stale entries removed.');
-  } catch (e) {
-    console.warn('Board refresh on ready failed:', e.message);
-  }
 
   // Initialize ML system if enabled
   if (process.env.ML_ENABLED === 'true') {
@@ -228,125 +196,31 @@ client.once(Events.ClientReady, async (bot) => {
   }
 });
 
-client.on(Events.ThreadCreate, async (thread) => {
-  try {
-    if (thread.parent?.type !== ChannelType.GuildForum) return;
-    if (thread.guildId !== GUILD_ID) return;
-    if (thread.parentId !== FORUM_CHANNEL_ID) return;
-
-    // Create workflow row for this thread
-    await ensureWorkflowForThread({ thread, initialRequesterId: thread.ownerId });
-
-    // Build Step 1 embed
-    const introText = buildStep1Intro(thread.ownerId);
-    const mentions = extractMentions(introText);
-
-    const embed = new EmbedBuilder()
-      .setDescription(introText)
-      .setColor('#29b473')
-      .setFooter({
-        text: 'Previous: N/A | Current: INITIAL LEADERSHIP REVIEW | Next: STAFF REVIEW',
-      });
-
-    // Send after small delay so thread is ready
-    setTimeout(async () => {
-      try {
-        await thread.send({
-          content: mentions.join(' '),
-          embeds: [embed],
-          components: [decisionRowForStep(0)],
-        });
-      } catch (err) {
-        console.error(`Intro send failed in ${thread.id}:`, err?.code || err);
-      }
-      try {
-        await refreshBoard(client);
-      } catch {}
-    }, 2500);
-  } catch (err) {
-    console.error('Error handling ThreadCreate:', err);
-  }
-});
-
 client.on(Events.InteractionCreate, async (interaction) => {
+  // Handle slash commands
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+  if (!command) {
+    return interaction.reply({
+      content: 'Unknown command.',
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+
   try {
-    // Handle slash commands
-    if (interaction.isChatInputCommand()) {
-      const command = client.commands.get(interaction.commandName);
-      if (!command) {
-        return interaction.reply({
-          content: 'Unknown command.',
-          flags: MessageFlags.Ephemeral,
-        });
-      }
-      try {
-        await command.execute(interaction);
-      } catch (err) {
-        console.error('Command execution error:', err);
-        const reply = {
-          content: 'There was an error executing this command.',
-          flags: MessageFlags.Ephemeral,
-        };
-        if (interaction.deferred || interaction.replied) {
-          await interaction.followUp(reply).catch(() => {});
-        } else {
-          await interaction.reply(reply).catch(() => {});
-        }
-      }
-      return;
-    }
-
-    // Handle workflow buttons
-    if (!interaction.isButton()) return;
-    if (interaction.guildId !== GUILD_ID) return;
-
-    await handleWorkflowButton(interaction);
-    try {
-      await refreshBoard(interaction.client);
-    } catch {}
+    await command.execute(interaction);
   } catch (err) {
-    console.error('Button handler error:', err);
+    console.error('Command execution error:', err);
+    const reply = {
+      content: 'There was an error executing this command.',
+      flags: MessageFlags.Ephemeral,
+    };
     if (interaction.deferred || interaction.replied) {
-      try {
-        await interaction.followUp({
-          content: 'Something went wrong.',
-          flags: MessageFlags.Ephemeral,
-        });
-      } catch {}
+      await interaction.followUp(reply).catch(() => {});
     } else {
-      try {
-        await interaction.reply({
-          content: 'Something went wrong.',
-          flags: MessageFlags.Ephemeral,
-        });
-      } catch {}
+      await interaction.reply(reply).catch(() => {});
     }
-  }
-});
-
-client.on(Events.ThreadDelete, async (thread) => {
-  try {
-    if (thread?.guildId !== GUILD_ID) return;
-    await deleteWorkflowByThread(thread.id).catch(() => {});
-    await refreshBoard(client).catch(() => {});
-    console.log(`[DELETE] Thread ${thread.id} deleted → row removed from DB`);
-  } catch (err) {
-    console.error('Error handling ThreadDelete:', err);
-  }
-});
-
-client.on(Events.ChannelDelete, async (channel) => {
-  try {
-    if (typeof channel?.isThread === 'function' && channel.isThread()) {
-      if (channel.guildId !== GUILD_ID) return;
-      await deleteWorkflowByThread(channel.id).catch(() => {});
-      await refreshBoard(client).catch(() => {});
-      console.log(
-        `[DELETE] (ChannelDelete) Thread ${channel.id} deleted → row removed from DB`
-      );
-    }
-  } catch (err) {
-    console.error('Error handling ChannelDelete:', err);
   }
 });
 
