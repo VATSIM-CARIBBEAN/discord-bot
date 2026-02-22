@@ -4,17 +4,24 @@
 
 # VATCAR Discord Bot
 
-A Discord bot for administrative tasks in the VATSIM Caribbean Division's Discord server.
+A multi-guild Discord bot for the VATSIM Caribbean Division. A single bot process serves multiple Discord servers, with each guild's code isolated in its own folder for independent maintenance.
 
-## Current Features
-- **Workflow Automation**: Multi-step approval process with role-based permissions and decision buttons
-- **VATSIM Controller Tracking**: Real-time monitoring of controllers logging on/off positions with automatic Discord notifications
-- **Custom Embed Command**: Administrator slash command to create and send formatted embeds to any channel
+## Current Guilds
+
+### VATCAR Main Server (`guilds/vatcar/`)
+- **VATSIM Controller Tracking**: Real-time monitoring of 180+ ATC positions across Caribbean facilities
+- **Custom Embed Command**: Administrator slash command to create and send formatted embeds
+
+### San Juan / ZSU (`guilds/zsu/`)
+- **Role Management**: Automatic VATSIM/VATCAR role sync via `/sync` command
+- **Daily Roster Updates**: Scheduled bulk role sync for all guild members
+- **Training Coordination**: Training availability posts, top-down support requests, training notes
+- **Moderation Tools**: Anonymous DMs, autoresponder, member stats lookup
 
 ## Requirements
 - Node.js v18 or later
 - Discord.js v14
-- MySQL Database
+- MySQL Database (for VATCAR main)
 
 ## Setup
 
@@ -31,26 +38,29 @@ A Discord bot for administrative tasks in the VATSIM Caribbean Division's Discor
     npm install
     ```
 
-3. **Create the `.env` file** in the project root with your credentials:
+3. **Configure environment variables**
 
-    Copy the `.env.example` file to `.env` and fill in your credentials:
+    The bot uses separate `.env` files for shared and guild-specific configuration:
 
     ```bash
+    # Shared config (bot token, client ID, heartbeat)
     cp .env.example .env
+
+    # VATCAR guild config (guild ID, tracker channel, database)
+    cp guilds/vatcar/.env.example guilds/vatcar/.env
+
+    # ZSU guild config (guild ID, role IDs, API keys, roster schedule)
+    cp guilds/zsu/.env.example guilds/zsu/.env
     ```
 
-    Then edit the `.env` file with your actual values.
+    Edit each `.env` file with your actual values. See the `.env.example` files for documentation on each variable.
 
-4. **Configure instance-specific values** (optional but recommended)
+4. **Enable Privileged Gateway Intents**
 
-    Some values are hardcoded in the source files and should be updated for your organization:
-
-    - **[local_library/vatsim_tracker.js:8](local_library/vatsim_tracker.js#L8)**: `CHANNEL_ID` - Discord channel ID for controller tracking notifications
-    - **[commands/workflow/board.js:5-6](commands/workflow/board.js#L5-L6)**: `WORKFLOW_BOARD_THREAD_ID` and `WORKFLOW_BOARD_MESSAGE_ID` - Thread and message IDs for the workflow board
-    - **[commands/workflow/_shared.js:67](commands/workflow/_shared.js#L67)**: `EXECUTIVE_ROLE_ID` - Discord role ID for executive team
-    - **[commands/workflow/_shared.js:205](commands/workflow/_shared.js#L205)**: `LEADERSHIP_ROLE_IDS` - Set of Discord role IDs for leadership team
-    - **[commands/embed.js:87](commands/embed.js#L87)**: Footer text in embed command (set to your organization name)
-    - **[commands/workflow/_shared.js:250](commands/workflow/_shared.js#L250)**: Integration URL (update to your organization's URL)
+    In the [Discord Developer Portal](https://discord.com/developers/applications), enable these intents for your bot:
+    - Server Members Intent (required for ZSU roster sync)
+    - Presence Intent (required for ZSU)
+    - Message Content Intent (required for ZSU autoresponder)
 
 5. **Deploy slash commands**
 
@@ -58,47 +68,103 @@ A Discord bot for administrative tasks in the VATSIM Caribbean Division's Discor
     node deploy-commands.js
     ```
 
+    This automatically deploys each guild's commands to its respective server.
+
 6. **Start the bot**
 
     ```bash
     node index.js
     ```
 
-You can use a process manager on a virtual machine to keep your bot running 24/7. Oracle offers a free tier virtual machine which you can set up.
+## Architecture
 
-A Heroku Procfile is included for those who wish to use Heroku. You must disable web and enable worker for a 24/7 runtime.
+```
+discord-bot/
+├── index.js                    # Multi-guild orchestrator
+├── deploy-commands.js          # Per-guild command deployment
+├── shared/                     # Guild-agnostic utilities
+│   └── heartbeat.js
+├── guilds/
+│   ├── vatcar/                 # VATCAR main server
+│   │   ├── index.js            # Guild module entry point
+│   │   ├── commands/           # Slash commands
+│   │   ├── services/           # Background services (tracker)
+│   │   └── .env.example
+│   └── zsu/                    # San Juan (ZSU) server
+│       ├── index.js            # Guild module entry point
+│       ├── commands/           # Slash commands
+│       │   ├── Community/      # Community commands
+│       │   └── Moderation/     # Staff commands
+│       ├── functions/          # Background services (roster sync)
+│       └── .env.example
+```
+
+Each guild module in `guilds/<name>/index.js` exports a standard contract:
+- **`guildId`** — Which Discord server this module serves
+- **`intents`/`partials`** — Required Discord intents (merged at startup)
+- **`getCommands()`** — Slash commands to register for this guild
+- **`onReady(client)`** — Start background services when bot connects
+- **`onInteraction(interaction)`** — Handle interactions from this guild
+- **`onShutdown()`** — Cleanup on bot shutdown
 
 ## Features Detail
 
-### Workflow Automation
-Multi-phase approval system for change requests with automatic thread tracking, role-based permissions, and status updates.
-
-### VATSIM Controller Tracking
+### VATSIM Controller Tracking (VATCAR)
 - Polls VATSIM data feed every 2 seconds
 - Monitors 180+ positions across Caribbean facilities
 - Sends embed when controller logs on (green)
 - Updates embed when controller logs off (red) with session duration
 - Handles position variations (e.g., `MKJK_I_CTR` → `MKJK_CTR`)
+- State persisted to `guilds/vatcar/data/vatsim_state.json`
 
-### Embed Command
-Administrator-only slash command `/embed` to create custom embeds:
-- Channel selection (text/announcement channels only)
-- Title and description with `\n` parsing for newlines
-- Color options: Blue, Green, Gray
-- Optional image and clickable URL
-- Optional @everyone mention
+### Role Sync (ZSU)
+- `/sync` — Manual sync: links Discord to VATSIM, assigns rating/controller roles, sets nickname
+- `/synctest` — Staff command to test sync for a specific user
+- Daily automated roster update: syncs all guild members with VATSIM/VATCAR APIs
+- Built-in VATSIM API rate limiting (6 requests/minute)
 
-## Updating 
+### Training & Support (ZSU)
+- `/training-availability` — Post training sessions with timezone support and auto-expiring messages
+- `/top-down-support` — Request top-down ATC support with position selection
+- `/check-notes` — View training notes for a student
+- `/check-stats` — Quick link to VATSIM stats page
 
-If you have set up the bot on an Ubuntu virtual machine such as Oracle, you can pull the latest update by running:
+### Moderation (ZSU)
+- `/dm` — Send anonymous DMs from administration
+- `/autoresponder` — Set auto-responses to trigger phrases
+- `/member-stats` — View user's VATSIM/VATCAR profile
+- `/delete` — Delete last bot message
+
+## Adding a New Guild
+
+1. Create `guilds/<name>/` with `index.js`, `commands/`, and `.env.example`
+2. Implement the guild module contract in `index.js`
+3. Add `require('dotenv').config({ path: 'guilds/<name>/.env', override: false });` to root `index.js` and `deploy-commands.js`
+4. Create the `.env` file on the server with guild-specific values
+5. Run `node deploy-commands.js` and restart the bot
+
+## Process Management
+
+The bot is designed to run 24/7 using PM2:
 
 ```bash
-cd ~/Discord-Bot
-git pull
-npm ci
-node deploy-commands.js  # Only needed if slash commands changed
-pm2 restart discord-bot  # If using process manager
+pm2 start ecosystem.config.js
+pm2 logs discord-bot
+pm2 restart discord-bot
 ```
+
+## Deployment
+
+The GitHub Actions workflow (`.github/workflows/deploy.yml`) automatically deploys on push to `main`:
+1. SSH into VPS
+2. Pull latest code
+3. Install dependencies (`npm ci`)
+4. Deploy slash commands to all guilds
+5. Restart via PM2
+
+## Contributing
+
+VATCAR main server code lives in `guilds/vatcar/` and ZSU code lives in `guilds/zsu/`. Each team can submit PRs to their respective folder without affecting the other guild's functionality.
 
 ## License
 
