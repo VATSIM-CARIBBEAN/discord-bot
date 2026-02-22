@@ -1,11 +1,11 @@
-// local_library/vatsim_tracker.js
+// guilds/vatcar/services/vatsim-tracker.js
 const axios = require('axios');
 const { EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
 const VATSIM_DATA_URL = 'https://data.vatsim.net/v3/vatsim-data.json';
-const CHANNEL_ID = '1423619321267093504';
+const CHANNEL_ID = process.env.VATCAR_TRACKER_CHANNEL_ID;
 const POLL_INTERVAL = 2000; // 2 seconds
 const STATE_FILE = path.join(__dirname, '../data/vatsim_state.json');
 const OBSERVER_FREQUENCY = '199.998';

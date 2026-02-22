@@ -1,87 +1,99 @@
-// index.js
+// index.js — Multi-guild orchestrator
 require('dotenv').config();
-const { startHeartbeat } = require('./local_library/heartbeat');
-const { startTracker } = require('./local_library/vatsim_tracker');
+require('dotenv').config({ path: 'guilds/vatcar/.env', override: false });
+require('dotenv').config({ path: 'guilds/zsu/.env', override: false });
 
 const {
   Client,
-  GatewayIntentBits,
-  Partials,
   Events,
-  Collection,
   MessageFlags,
 } = require('discord.js');
-
+const { startHeartbeat } = require('./shared/heartbeat');
 const fs = require('fs');
 const path = require('path');
 
 const DISCORD_TOKEN = process.env.BOT_TOKEN;
-const GUILD_ID = process.env.GUILD_ID;
-const HB_URL = process.env.BETTERSTACK_HEARTBEAT_URL;
-const HB_INTERVAL = Number(process.env.BETTERSTACK_HEARTBEAT_INTERVAL_MS || 60000);
-
-if (!DISCORD_TOKEN || !GUILD_ID) {
-  console.error('Missing one of BOT_TOKEN, GUILD_ID in .env');
+if (!DISCORD_TOKEN) {
+  console.error('Missing BOT_TOKEN in .env');
   process.exit(1);
 }
 
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
-  partials: [Partials.Channel, Partials.Message],
-});
+// 1. Discover guild modules
+const guildsDir = path.join(__dirname, 'guilds');
+const guildModules = [];
 
-// Load slash commands
-client.commands = new Collection();
-function loadCommands(dir) {
-  const files = fs.readdirSync(dir);
-  for (const file of files) {
-    const filePath = path.join(dir, file);
-    const stat = fs.statSync(filePath);
-    if (stat.isDirectory()) {
-      loadCommands(filePath);
-    } else if (file.endsWith('.js') && !file.startsWith('_')) {
-      try {
-        const command = require(filePath);
-        if (command.data && command.execute) {
-          client.commands.set(command.data.name, command);
-        }
-      } catch (err) {
-        console.warn(`[WARNING]  Could not load command ${filePath}:`, err.message);
+for (const folder of fs.readdirSync(guildsDir)) {
+  const modPath = path.join(guildsDir, folder, 'index.js');
+  if (fs.existsSync(modPath)) {
+    try {
+      const mod = require(modPath);
+      if (mod.guildId) {
+        guildModules.push(mod);
+      } else {
+        console.warn(`[SKIP] Guild module "${folder}" has no guildId configured — check its .env`);
       }
+    } catch (err) {
+      console.error(`[ERROR] Failed to load guild module "${folder}":`, err.message);
     }
   }
 }
-loadCommands(path.join(__dirname, 'commands'));
 
+if (guildModules.length === 0) {
+  console.error('No guild modules found. Check guilds/ directory and .env files.');
+  process.exit(1);
+}
+
+// 2. Merge intents and partials from all guild modules
+const allIntents = new Set();
+const allPartials = new Set();
+for (const mod of guildModules) {
+  (mod.intents || []).forEach(i => allIntents.add(i));
+  (mod.partials || []).forEach(p => allPartials.add(p));
+}
+
+// 3. Create client with merged intents
+const client = new Client({
+  intents: [...allIntents],
+  partials: [...allPartials],
+});
+
+// 4. Build guild ID -> module lookup
+const guildMap = new Map();
+for (const mod of guildModules) {
+  guildMap.set(mod.guildId, mod);
+}
+
+// 5. On ready: start heartbeat + call each guild's onReady
 let hbHandle = null;
-let trackerHandle = null;
 
 client.once(Events.ClientReady, async (bot) => {
   console.log(`[BOT] Logged in as ${bot.user.tag}`);
-  console.log(` Guild: ${GUILD_ID}`);
+  console.log(`[BOT] Serving ${guildModules.length} guild(s): ${guildModules.map(m => m.name).join(', ')}`);
 
-  hbHandle = startHeartbeat(HB_URL, HB_INTERVAL);
-  console.log('Better Stack heartbeat started.');
+  hbHandle = startHeartbeat(
+    process.env.BETTERSTACK_HEARTBEAT_URL,
+    Number(process.env.BETTERSTACK_HEARTBEAT_INTERVAL_MS || 60000),
+  );
 
-  trackerHandle = startTracker(client);
+  for (const mod of guildModules) {
+    try {
+      await mod.onReady(client);
+      console.log(`[${mod.id}] Ready`);
+    } catch (err) {
+      console.error(`[${mod.id}] onReady error:`, err);
+    }
+  }
 });
 
+// 6. Route interactions to the correct guild module
 client.on(Events.InteractionCreate, async (interaction) => {
-  // Handle slash commands
-  if (!interaction.isChatInputCommand()) return;
-
-  const command = client.commands.get(interaction.commandName);
-  if (!command) {
-    return interaction.reply({
-      content: 'Unknown command.',
-      flags: MessageFlags.Ephemeral,
-    });
-  }
+  const mod = guildMap.get(interaction.guildId);
+  if (!mod) return; // Interaction from unknown guild — ignore
 
   try {
-    await command.execute(interaction);
+    await mod.onInteraction(interaction);
   } catch (err) {
-    console.error('Command execution error:', err);
+    console.error(`[${mod.id}] Interaction error:`, err);
     const reply = {
       content: 'There was an error executing this command.',
       flags: MessageFlags.Ephemeral,
@@ -94,17 +106,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
+// 7. Shutdown
 function shutdown() {
   console.log('Shutting down…');
-  if (trackerHandle) trackerHandle.stop();
+  if (hbHandle) hbHandle.stop();
+  for (const mod of guildModules) {
+    try {
+      mod.onShutdown?.();
+    } catch (e) {
+      console.error(`[${mod.id}] Shutdown error:`, e);
+    }
+  }
   client.destroy();
   process.exit(0);
 }
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-process.on('beforeExit', () => {
-  if (hbHandle) hbHandle.stop();
-  if (trackerHandle) trackerHandle.stop();
-});
 
 client.login(DISCORD_TOKEN);

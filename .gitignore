@@ -1,6 +1,7 @@
 .env
+guilds/*/.env
 node_modules
-data/
+guilds/*/data/
 logs/
 scripts/
 
