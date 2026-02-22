@@ -58,6 +58,10 @@ module.exports = {
     const { scheduleRosterUpdate } = require('./functions/scheduleRosterUpdate');
     rosterInterval = scheduleRosterUpdate(client);
 
+    // Restore persisted autoresponders
+    const { registerAutoresponderListener } = require('./commands/Moderation/autoresponder');
+    registerAutoresponderListener(client, process.env.ZSU_GUILD_ID);
+
     // Register ZSU-specific event listeners
     this._registerEvents(client);
   },
