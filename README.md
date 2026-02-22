@@ -166,6 +166,10 @@ The GitHub Actions workflow (`.github/workflows/deploy.yml`) automatically deplo
 
 VATCAR main server code lives in `guilds/vatcar/` and ZSU code lives in `guilds/zsu/`. Each team can submit PRs to their respective folder without affecting the other guild's functionality.
 
+## Acknowledgements
+
+The ZSU guild module (`guilds/zsu/`) is based on the [vZSU-Bot](https://github.com/Daniel-Faria-Filho/vZSU-Bot).
+
 ## License
 
 MIT License
