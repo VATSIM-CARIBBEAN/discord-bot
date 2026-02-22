@@ -3,7 +3,6 @@ const axios = require('axios');
 const { EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { recordSession } = require('./ml/data_collector');
 
 const VATSIM_DATA_URL = 'https://data.vatsim.net/v3/vatsim-data.json';
 const CHANNEL_ID = '1423619321267093504';
@@ -391,18 +390,6 @@ async function checkControllers(client) {
           existingController.logoffTime = new Date().toISOString();
           hasNewControllers = true;
           console.log(`✈️ ${existingController.controller.name} logged off from ${actualCallsign} (handover to ${controller.name})`);
-
-          // Record session for ML analysis
-          if (process.env.ML_ENABLED === 'true') {
-            recordSession({
-              callsign: actualCallsign,
-              normalizedCallsign: normalizedCallsign,
-              controllerName: existingController.controller.name,
-              controllerCid: existingController.controller.cid ? String(existingController.controller.cid) : null,
-              logonTime: existingController.logonTime,
-              logoffTime: existingController.logoffTime,
-            }).catch(err => console.error('ML session recording failed:', err.message));
-          }
         }
 
         if (!existingController || existingController.logoffTime || isDifferentController) {
@@ -459,18 +446,6 @@ async function checkControllers(client) {
           ctrlData.logoffTime = new Date().toISOString();
           hasChanges = true;
           console.log(`✈️ ${ctrlData.controller.name} logged off from ${actualCallsign} (${normalizedCallsign})`);
-
-          // Record session for ML analysis
-          if (process.env.ML_ENABLED === 'true') {
-            recordSession({
-              callsign: actualCallsign,
-              normalizedCallsign: normalizedCallsign,
-              controllerName: ctrlData.controller.name,
-              controllerCid: ctrlData.controller.cid ? String(ctrlData.controller.cid) : null,
-              logonTime: ctrlData.logonTime,
-              logoffTime: ctrlData.logoffTime,
-            }).catch(err => console.error('ML session recording failed:', err.message));
-          }
         }
       }
       

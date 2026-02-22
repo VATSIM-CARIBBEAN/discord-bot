@@ -9,7 +9,6 @@ A Discord bot for administrative tasks in the VATSIM Caribbean Division's Discor
 ## Current Features
 - **Workflow Automation**: Multi-step approval process with role-based permissions and decision buttons
 - **VATSIM Controller Tracking**: Real-time monitoring of controllers logging on/off positions with automatic Discord notifications
-- **Machine Learning Prediction System**: Advanced controller activity prediction using 7 ML techniques to forecast when positions will be staffed
 - **Custom Embed Command**: Administrator slash command to create and send formatted embeds to any channel
 
 ## Requirements
@@ -81,45 +80,6 @@ Multi-phase approval system for change requests with automatic thread tracking, 
 - Updates embed when controller logs off (red) with session duration
 - Handles position variations (e.g., `MKJK_I_CTR` → `MKJK_CTR`)
 
-### Machine Learning Prediction System
-Advanced prediction system that learns from historical controller activity patterns to forecast when facilities will be staffed:
-
-**Key Features:**
-- **Exponential Time Decay Weighting**: Prioritizes recent sessions over old data for more accurate predictions
-- **Cold Start Handling**: Detects emerging patterns from new controllers with provisional confidence scores
-- **Consecutive Week Streak Bonuses**: Rewards controllers with consistent weekly patterns
-- **Dynamic Per-Facility Confidence Thresholds**: Adjusts prediction requirements based on facility-specific accuracy
-- **Multi-Facility Controller Adjustments**: Boosts specialists, penalizes facility-hoppers
-- **Session Continuity Modeling**: Detects and predicts multi-hour session blocks
-- **Bayesian Confidence Intervals**: Provides statistically validated confidence scores with upper/lower bounds
-
-**Database Schema:**
-- `controller_sessions` - Historical session data (logons, durations, facilities)
-- `controller_patterns` - Learned behavioral patterns per controller/facility/day/hour
-- `controller_predictions` - Future predictions with confidence scores and validation results
-- `ml_model_metadata` - Model performance tracking over time
-- `facility_accuracy_metrics` - Per-facility prediction accuracy and dynamic thresholds
-- `vatsim_events` - Known VATSIM events for outlier filtering
-- `ml_daily_learning` - Daily analysis insights
-
-**Scheduled Jobs:**
-- **Midnight UTC**: Daily pattern analysis and learning
-- **6 AM UTC**: Generate predictions for next 24 hours
-- **Every 15 minutes**: Validate predictions against actual activity
-- **7 AM UTC**: Send debug report to configured user
-- **8 AM UTC**: Prediction evaluation and accuracy updates
-
-**Configuration:**
-Set these environment variables in `.env`:
-- `ML_ENABLED=true` - Enable the ML system
-- `ML_DEBUG_USER_ID` - Discord user ID for debug reports and `/ml-stats` access
-- `ML_TRAINING_PERIOD_DAYS=30` - Days of data required before predictions start
-- `ML_MIN_CONFIDENCE=60` - Minimum confidence threshold for predictions
-- `ML_DATABASE` - Separate MySQL database for ML data
-
-**Commands:**
-- `/ml-stats` - View ML system statistics (requires `ML_DEBUG_USER_ID` authorization)
-
 ### Embed Command
 Administrator-only slash command `/embed` to create custom embeds:
 - Channel selection (text/announcement channels only)
@@ -139,23 +99,6 @@ npm ci
 node deploy-commands.js  # Only needed if slash commands changed
 pm2 restart discord-bot  # If using process manager
 ```
-
-## Database Migration
-
-When deploying the ML system for the first time, the database schema will be automatically initialized on bot startup. The `initializeMLSchema()` function creates all required tables if they don't exist.
-
-**Manual Migration (if needed):**
-If you need to manually initialize or verify the ML database schema:
-```bash
-node -e "require('dotenv').config(); const { initializeMLSchema } = require('./local_library/ml/schema'); initializeMLSchema().then(() => process.exit(0));"
-```
-
-**Rollback Strategy:**
-If you need to disable the ML system:
-1. Set `ML_ENABLED=false` in `.env`
-2. Restart the bot
-3. The ML tables remain in the database but are unused
-4. To fully remove: Drop the `ML_DATABASE` in MySQL
 
 ## License
 
