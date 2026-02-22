@@ -19,4 +19,5 @@ jobs:
             cd /opt/vatcar/discord-bot
             git pull origin main
             npm ci
+            node deploy-commands.js
             pm2 restart discord-bot
