@@ -38,6 +38,11 @@ const vatsimRateLimiter = {
 };
 
 async function performRosterUpdate(guild) {
+  if (isExecuting) {
+    throw new Error('A roster sync is already in progress');
+  }
+  isExecuting = true;
+
   try {
     const facility = process.env.ZSU_FACILITY_NAME;
 
@@ -47,10 +52,8 @@ async function performRosterUpdate(guild) {
       3: process.env.ZSU_S2_ROLE_ID,
       4: process.env.ZSU_S3_ROLE_ID,
       5: process.env.ZSU_C1_ROLE_ID,
-      6: process.env.ZSU_C2_ROLE_ID,
       7: process.env.ZSU_C3_ROLE_ID,
       8: process.env.ZSU_I1_ROLE_ID,
-      9: process.env.ZSU_I2_ROLE_ID,
       10: process.env.ZSU_I3_ROLE_ID,
       11: process.env.ZSU_SUP_ROLE_ID,
       12: process.env.ZSU_ADM_ROLE_ID,
@@ -58,8 +61,7 @@ async function performRosterUpdate(guild) {
 
     const ratingNames = {
       1: 'OBS', 2: 'S1', 3: 'S2', 4: 'S3', 5: 'C1',
-      6: 'C2', 7: 'C3', 8: 'I1', 9: 'I2', 10: 'I3',
-      11: 'SUP', 12: 'ADM',
+      7: 'C3', 8: 'I1', 10: 'I3', 11: 'SUP', 12: 'ADM',
     };
 
     const stats = {
@@ -212,6 +214,8 @@ async function performRosterUpdate(guild) {
   } catch (error) {
     console.error('[zsu] Error in roster update:', error);
     throw error;
+  } finally {
+    isExecuting = false;
   }
 }
 
@@ -239,24 +243,17 @@ function scheduleRosterUpdate(client) {
       etTime.getMinutes() === targetMinute &&
       !isExecuting
     ) {
-      isExecuting = true;
-
       // Find the ZSU guild specifically
       const guild = client.guilds.cache.get(process.env.ZSU_GUILD_ID);
       if (!guild) {
-        isExecuting = false;
         return;
       }
 
       console.log(`[zsu] Starting scheduled roster update`);
 
       performRosterUpdate(guild)
-        .then(() => {
-          isExecuting = false;
-        })
         .catch(error => {
           console.error('[zsu] Error in scheduled roster update:', error);
-          isExecuting = false;
         });
     }
   }, 60000);
@@ -264,4 +261,4 @@ function scheduleRosterUpdate(client) {
   return interval;
 }
 
-module.exports = { scheduleRosterUpdate };
+module.exports = { scheduleRosterUpdate, performRosterUpdate };

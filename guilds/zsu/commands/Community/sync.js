@@ -130,11 +130,11 @@ module.exports = {
         3: process.env.ZSU_S2_ROLE_ID,
         4: process.env.ZSU_S3_ROLE_ID,
         5: process.env.ZSU_C1_ROLE_ID,
-        6: process.env.ZSU_C3_ROLE_ID,
-        7: process.env.ZSU_I1_ROLE_ID,
-        8: process.env.ZSU_I3_ROLE_ID,
-        9: process.env.ZSU_SUP_ROLE_ID,
-        10: process.env.ZSU_ADM_ROLE_ID,
+        7: process.env.ZSU_C3_ROLE_ID,
+        8: process.env.ZSU_I1_ROLE_ID,
+        10: process.env.ZSU_I3_ROLE_ID,
+        11: process.env.ZSU_SUP_ROLE_ID,
+        12: process.env.ZSU_ADM_ROLE_ID,
       };
 
       const userRating = ratingData.rating;
@@ -144,8 +144,7 @@ module.exports = {
 
       const ratingNames = {
         1: 'OBS', 2: 'S1', 3: 'S2', 4: 'S3', 5: 'C1',
-        6: 'C2', 7: 'C3', 8: 'I1', 9: 'I2', 10: 'I3',
-        11: 'SUP', 12: 'ADM',
+        7: 'C3', 8: 'I1', 10: 'I3', 11: 'SUP', 12: 'ADM',
       };
 
       const roleNames = rolesToAssign
