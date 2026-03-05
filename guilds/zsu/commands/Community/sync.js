@@ -11,7 +11,8 @@ module.exports = {
 
     const discordUserId = interaction.user.id;
     const apiKey = process.env.ZSU_API_KEY;
-    const facility = process.env.ZSU_FACILITY_NAME;
+    const facilityId = parseInt(process.env.ZSU_FACILITY_ID);
+    const neighboringFacilityIds = (process.env.ZSU_NEIGHBORING_FACILITIES || '').split(',').map(f => parseInt(f.trim())).filter(id => !isNaN(id));
     const ATM = process.env.ZSU_FACILITY_ATM_DISCORD_ID;
 
     try {
@@ -74,18 +75,18 @@ module.exports = {
         return;
       }
 
-      const { first_name, last_name, fir, visiting_facilities = [] } = vatcarData.data;
+      const { first_name, last_name, facility: userFacilityId } = vatcarData.data;
       const nickname = `${first_name} ${last_name} - ${cid}`;
+
+      // Fetch facility roster to check visitor status
+      const rosterResponse = await fetch(`https://vatcar.net/api/v2/facility/roster?api_key=${apiKey}`);
+      const rosterData = await rosterResponse.json();
+      const isVisitingController = rosterData.success && rosterData.data.visitors.some(v => v.cid === cid);
 
       // Role assignment logic
       const rolesToAssign = [];
-      const isHomeController = fir && fir.name_short === facility;
-      const isVisitingController = visiting_facilities.some(f => f.fir.name_short === facility);
-
-      const neighboringFacilities = (process.env.ZSU_NEIGHBORING_FACILITIES || '').split(',').map(f => f.trim());
-      const isNeighboringController =
-        (vatcarData.data.fir && neighboringFacilities.includes(vatcarData.data.fir.name_short)) ||
-        visiting_facilities.some(f => neighboringFacilities.includes(f.fir.name_short));
+      const isHomeController = userFacilityId === facilityId;
+      const isNeighboringController = neighboringFacilityIds.includes(userFacilityId);
 
       // Always add VATSIM User role
       rolesToAssign.push(process.env.ZSU_VERIFIED_VATSIM_USER_ROLE_ID);

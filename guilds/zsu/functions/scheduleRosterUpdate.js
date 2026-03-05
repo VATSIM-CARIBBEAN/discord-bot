@@ -44,7 +44,7 @@ async function performRosterUpdate(guild) {
   isExecuting = true;
 
   try {
-    const facility = process.env.ZSU_FACILITY_NAME;
+    const facilityId = parseInt(process.env.ZSU_FACILITY_ID);
 
     const ratingRoles = {
       1: process.env.ZSU_OBS_ROLE_ID,
@@ -145,18 +145,13 @@ async function performRosterUpdate(guild) {
         const requiredRoles = new Set();
         requiredRoles.add(process.env.ZSU_VERIFIED_VATSIM_USER_ROLE_ID);
 
-        const neighboringFacilities = (process.env.ZSU_NEIGHBORING_FACILITIES || '').split(',').map(f => f.trim());
+        const neighboringFacilityIds = (process.env.ZSU_NEIGHBORING_FACILITIES || '').split(',').map(f => parseInt(f.trim())).filter(id => !isNaN(id));
 
-        const isHomeController = vatcarData.data.fir && vatcarData.data.fir.name_short === facility;
-        const visitingFacilities = vatcarData.data.visiting_facilities || [];
-        const isVisitingController = visitingFacilities.some(
-          f => f.fir.name_short === facility,
-        );
-        const isNeighboringController =
-          (vatcarData.data.fir && neighboringFacilities.includes(vatcarData.data.fir.name_short)) ||
-          visitingFacilities.some(f =>
-            neighboringFacilities.includes(f.fir.name_short),
-          );
+        const userFacilityId = vatcarData.data.facility;
+        const rosterEntry = controllerMap.get(memberId);
+        const isHomeController = userFacilityId === facilityId;
+        const isVisitingController = rosterEntry && rosterEntry.isVisitor;
+        const isNeighboringController = neighboringFacilityIds.includes(userFacilityId);
 
         if (isHomeController) {
           requiredRoles.add(process.env.ZSU_FACILITY_CONTROLLER_ROLE_ID);
