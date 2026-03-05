@@ -86,7 +86,7 @@ async function performRosterUpdate(guild) {
     const controllerMap = new Map();
 
     data.data.controllers.forEach(controller => {
-      const discordId = controller.integrations.find(i => i.type === 1)?.value;
+      const discordId = controller.integrations?.find(i => i.type === 1)?.value;
       if (discordId) {
         controllerMap.set(discordId, {
           cid: controller.cid,
@@ -98,7 +98,7 @@ async function performRosterUpdate(guild) {
     });
 
     data.data.visitors.forEach(visitor => {
-      const discordId = visitor.integrations.find(i => i.type === 1)?.value;
+      const discordId = visitor.integrations?.find(i => i.type === 1)?.value;
       if (discordId) {
         controllerMap.set(discordId, {
           cid: visitor.cid,
@@ -148,12 +148,13 @@ async function performRosterUpdate(guild) {
         const neighboringFacilities = (process.env.ZSU_NEIGHBORING_FACILITIES || '').split(',').map(f => f.trim());
 
         const isHomeController = vatcarData.data.fir && vatcarData.data.fir.name_short === facility;
-        const isVisitingController = vatcarData.data.visiting_facilities.some(
+        const visitingFacilities = vatcarData.data.visiting_facilities || [];
+        const isVisitingController = visitingFacilities.some(
           f => f.fir.name_short === facility,
         );
         const isNeighboringController =
           (vatcarData.data.fir && neighboringFacilities.includes(vatcarData.data.fir.name_short)) ||
-          vatcarData.data.visiting_facilities.some(f =>
+          visitingFacilities.some(f =>
             neighboringFacilities.includes(f.fir.name_short),
           );
 

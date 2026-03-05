@@ -77,7 +77,7 @@ module.exports = {
         return;
       }
 
-      const { first_name, last_name, fir, visiting_facilities } = vatcarData.data;
+      const { first_name, last_name, fir, visiting_facilities = [] } = vatcarData.data;
       const nickname = `${first_name} ${last_name} - ${cid}`;
 
       // Role assignment logic

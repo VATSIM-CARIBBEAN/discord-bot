@@ -74,7 +74,7 @@ module.exports = {
         return;
       }
 
-      const { first_name, last_name, fir, visiting_facilities } = vatcarData.data;
+      const { first_name, last_name, fir, visiting_facilities = [] } = vatcarData.data;
       const nickname = `${first_name} ${last_name} - ${cid}`;
 
       // Role assignment logic
@@ -85,7 +85,7 @@ module.exports = {
       const neighboringFacilities = (process.env.ZSU_NEIGHBORING_FACILITIES || '').split(',').map(f => f.trim());
       const isNeighboringController =
         (vatcarData.data.fir && neighboringFacilities.includes(vatcarData.data.fir.name_short)) ||
-        vatcarData.data.visiting_facilities.some(f => neighboringFacilities.includes(f.fir.name_short));
+        visiting_facilities.some(f => neighboringFacilities.includes(f.fir.name_short));
 
       // Always add VATSIM User role
       rolesToAssign.push(process.env.ZSU_VERIFIED_VATSIM_USER_ROLE_ID);
