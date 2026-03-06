@@ -129,7 +129,7 @@ async function performRosterUpdate(guild) {
 
         const neighboringFacilityIds = (process.env.ZSU_NEIGHBORING_FACILITIES || '').split(',').map(f => parseInt(f.trim())).filter(id => !isNaN(id));
 
-        const userCid = vatsimData.user_id;
+        const userCid = Number(vatsimData.user_id);
         const userFacilityId = vatcarData.data.facility;
         const rosterEntry = rosterMap.get(userCid);
         const isHomeController = rosterEntry && rosterEntry.isHomeController;

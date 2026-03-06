@@ -44,7 +44,7 @@ module.exports = {
         return;
       }
 
-      const cid = vatsimData.user_id;
+      const cid = Number(vatsimData.user_id);
 
       // Fetch user data from VATCAR API
       const vatcarResponse = await fetch(`https://vatcar.net/api/v2/user/${cid}?api_key=${apiKey}`);
