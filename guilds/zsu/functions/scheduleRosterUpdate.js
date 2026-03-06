@@ -44,8 +44,6 @@ async function performRosterUpdate(guild) {
   isExecuting = true;
 
   try {
-    const facilityId = parseInt(process.env.ZSU_FACILITY_ID);
-
     const ratingRoles = {
       1: process.env.ZSU_OBS_ROLE_ID,
       2: process.env.ZSU_S1_ROLE_ID,
@@ -82,31 +80,15 @@ async function performRosterUpdate(guild) {
       throw new Error('Failed to fetch VATCAR roster');
     }
 
-    // Create map of Discord IDs to controller data
-    const controllerMap = new Map();
+    // Create map of CIDs to roster status
+    const rosterMap = new Map();
 
     data.data.controllers.forEach(controller => {
-      const discordId = controller.integrations?.find(i => i.type === 1)?.value;
-      if (discordId) {
-        controllerMap.set(discordId, {
-          cid: controller.cid,
-          rating: controller.rating,
-          isVisitor: false,
-          isVATCAR: true,
-        });
-      }
+      rosterMap.set(controller.cid, { isHomeController: true, isVisitor: false });
     });
 
     data.data.visitors.forEach(visitor => {
-      const discordId = visitor.integrations?.find(i => i.type === 1)?.value;
-      if (discordId) {
-        controllerMap.set(discordId, {
-          cid: visitor.cid,
-          rating: visitor.rating,
-          isVisitor: true,
-          isVATCAR: true,
-        });
-      }
+      rosterMap.set(visitor.cid, { isHomeController: false, isVisitor: true });
     });
 
     const members = await guild.members.fetch();
@@ -147,11 +129,12 @@ async function performRosterUpdate(guild) {
 
         const neighboringFacilityIds = (process.env.ZSU_NEIGHBORING_FACILITIES || '').split(',').map(f => parseInt(f.trim())).filter(id => !isNaN(id));
 
+        const userCid = vatsimData.user_id;
         const userFacilityId = vatcarData.data.facility;
-        const rosterEntry = controllerMap.get(memberId);
-        const isHomeController = userFacilityId === facilityId;
+        const rosterEntry = rosterMap.get(userCid);
+        const isHomeController = rosterEntry && rosterEntry.isHomeController;
         const isVisitingController = rosterEntry && rosterEntry.isVisitor;
-        const isNeighboringController = neighboringFacilityIds.includes(userFacilityId);
+        const isNeighboringController = !rosterEntry && neighboringFacilityIds.includes(userFacilityId);
 
         if (isHomeController) {
           requiredRoles.add(process.env.ZSU_FACILITY_CONTROLLER_ROLE_ID);
